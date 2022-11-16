@@ -1,4 +1,6 @@
-package io.openems.edge.controller.symmetric.balancingomei;
+package io.openems.edge.controller.ess.omei.hybrid;
+
+import java.time.Instant;
 
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -24,19 +26,21 @@ import io.openems.edge.ess.power.api.Phase;
 import io.openems.edge.ess.power.api.Pwr;
 import io.openems.edge.meter.api.SymmetricMeter;
 
-/**
- * Balancing Controller handling two ESS.
- *
- */
 @Designate(ocd = Config.class, factory = true)
-@Component(name = "Controller.Symmetric.BalancingOmeiCluster", immediate = true, configurationPolicy = ConfigurationPolicy.REQUIRE)
-public class BalancingOmeiCluster extends AbstractOpenemsComponent implements Controller, OpenemsComponent {
-
+@Component(//
+		name = "Controller.Symmetric.Hybrid", //
+		immediate = true, //
+		configurationPolicy = ConfigurationPolicy.REQUIRE //
+)
+public class HybridControllerImpl extends AbstractOpenemsComponent implements HybridController, Controller, OpenemsComponent {
+	
 	// Values for PIDFilter
 	private final static double P = 0.3;
 	private final static double I = 0.3;
 	private final static double D = 0.1;
-	
+
+	private final Logger log = LoggerFactory.getLogger(HybridControllerImpl.class);
+		
 	/*
 	 * Workaround for unexpected PidFilter behavior. 
 	 * Both ESS use the same power object, which only has one pidFilter object.
@@ -44,88 +48,126 @@ public class BalancingOmeiCluster extends AbstractOpenemsComponent implements Co
 	 * as the calculation is not memoryless.  
 	 */
 	private PidFilter redoxFilter = new PidFilter(P,I,D);
-	private PidFilter litIonFilter = new PidFilter(P,I,D);
+	private PidFilter liIonFilter = new PidFilter(P,I,D);
+	private Config config = null;
 	
+	private Instant redoxPowerRequested;
+
 	@Reference
-	protected ComponentManager componentManager;
+	private ComponentManager componentManager;
 	
-	@Reference
+	@Reference 
 	private Sum sum;
 
-	private Config config;
-	
-	private final Logger log = LoggerFactory.getLogger(BalancingOmeiCluster.class);
-
-	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
-		;
-		private final Doc doc;
-
-		private ChannelId(Doc doc) {
-			this.doc = doc;
-		}
-
-		@Override
-		public Doc doc() {
-			return this.doc;
-		}
-	}
-
-	public BalancingOmeiCluster() {
+	public HybridControllerImpl(){
 		super(//
 				OpenemsComponent.ChannelId.values(), //
 				Controller.ChannelId.values(), //
-				ChannelId.values() //
+				HybridController.ChannelId.values() //
 		);
 	}
 
 	@Activate
-	void activate(ComponentContext context, Config config) throws OpenemsNamedException {
+	void activate(ComponentContext context, Config config) {
 		super.activate(context, config.id(), config.alias(), config.enabled());
 		this.config = config;
 	}
 
-	@Override
 	@Deactivate
 	protected void deactivate() {
 		super.deactivate();
 	}
 
-	
 	@Override
 	public void run() throws OpenemsNamedException {
 		SymmetricMeter meter = this.componentManager.getComponent(this.config.meter_id());
 		
 		/*
-		 * ESSs as local variable to avoid Problems when updating config of a ESS during runtime. 
+		 * ESSs as local variable to avoid Problems when updating config of a ESS during runtime.
+		 * -> look unto updatefilter 
 		 */
 		ManagedSymmetricEss redox = this.componentManager.getComponent(this.config.redox_id());
-		ManagedSymmetricEss litIon = this.componentManager.getComponent(this.config.litIon_id());
+		ManagedSymmetricEss liIon = this.componentManager.getComponent(this.config.litIon_id());
 
-		int litSoc = litIon.getSoc().getOrError();
-		int redSoc = redox.getSoc().getOrError();
+		
 		
 		/*
 		 * OPENEMS calls this every cycle. Therefore I do the same. Maybe it would be more efficient
 		 * to call it once during init?
 		 */
 		configurePid(redox, redoxFilter);
-		configurePid(litIon, litIonFilter);
+		configurePid(liIon, liIonFilter);
 		
-		if(!(isOnGrid(redox)&&isOnGrid(litIon))) {
+		if(!(isOnGrid(redox)&&isOnGrid(liIon))) {
 			return;
 		}
 		
-		var calculatedPower = calculatePower(meter, config.targetGridSetpoint());
+		// Power the ESSs needs to charge/ discharge to meet the required GridSetpoint
+		int calculatedPower = calculatePower(meter, calculateGridSetpoint());
+		double splitModifier = calculateSplitModifier(redox, liIon, calculatedPower);
+		int splitPower = (int) (splitModifier * calculatedPower);
+		filterAndApplyPower(splitPower, redox,redoxFilter);
+		filterAndApplyPower(calculatedPower - splitPower, liIon, liIonFilter);
+	}
+	
+	/**
+	 * Determines amount of power that should be feed into or sold to grid, based on predicted supply and demand
+	 * and current Energy Prices. 
+	 * 
+	 * @return Value in [W] which should be feed-in(positive) 
+	 * 	      or sold-off(negative) to grid.
+	 */
+	private int calculateGridSetpoint() {
+		// Consider Prediction
+		// Consider Energy Prices
+		return 0;
+	}
+	
+	/**
+	 * Determines ratio of available active power each ESS should receive, based on
+	 * SoC, available capacity, C-Rate and  Allowed Dis-/Charge Power.
+	 * 1 redox receives all power.
+	 * 0 liIon receives all power
+	 * 
+	 * @return Value in [0...1]
+	 * @throws InvalidValueException when ESS SoC could not be read.
+	 */
+	private double calculateSplitModifier(ManagedSymmetricEss redox, ManagedSymmetricEss liOn, int calculatedPower) throws InvalidValueException {
+		double splitModifier = 0;
+		double emergencyCharge = 0.25;		// TODO implement as parameter via 
+		double fastCharge = 0.5; 			// TODO implement as parameter via config
+		int rampRateRedox = 20000;			// ramp rate of 20kW/s TODO if we use this -> attribute of ESS and don't assume time per cycle even if its spec.
+		int litSoc = liOn.getSoc().getOrError();
+		int redSoc = redox.getSoc().getOrError();
 		
-		if(calculatedPower == 0) {
-			/*
-			 * Should this case have unique behavior?
-			 */
-		} else if(calculatedPower <  0) {
-			handleCharge(calculatedPower, redox, litIon, redSoc, litSoc);
+		if(calculatedPower <= 0) {
+			splitModifier = 1 - redSoc/100; 
+			
+			// Supply min. Power if LiOn is below certain limit.
+			if(litSoc <= config.minSoc()) {
+				splitModifier = Math.min(splitModifier, emergencyCharge);
+			} else if (litSoc <= config.minSoc() * 2) {
+				splitModifier = Math.min(splitModifier, fastCharge);
+			}
+			
 		} else {
-			handleDischarge(calculatedPower, redox, litIon, redSoc, litSoc);
+			
+			// Should first be covered by LiOn, then Redox phase in... 
+			// Redox should provide "netload", LiOn cover changes
+			int lastPowerRedox = redox.getActivePower().getOrError();
+			int lastPowerLiOn = liOn.getActivePower().getOrError();
+			
+			if(Math.abs(calculatedPower - lastPowerRedox) <= rampRateRedox) {
+				splitModifier = 1;
+			} else {
+				splitModifier = ((double)rampRateRedox + lastPowerRedox) / calculatedPower;
+			}
 		}
+		
+		if(splitModifier < 0 || splitModifier > 1) {
+			throw new IllegalArgumentException("Invalid Split.");
+		}
+		return splitModifier;
 	}
 	
 	/**
@@ -143,49 +185,6 @@ public class BalancingOmeiCluster extends AbstractOpenemsComponent implements Co
 		return meter.getActivePower().getOrError() /* current buy-from/sell-to grid */
 				+ sum.getEssActivePower().getOrError() /* current charge/discharge of ALL Ess */
 				- targetGridSetpoint; /* the configured target setpoint */
-	}
-	
-	private void handleCharge(int calculatedPower,ManagedSymmetricEss redox,
-			ManagedSymmetricEss litIon, int redSoc, int litSoc) throws OpenemsNamedException {
-		
-		if(litSoc <= config.minSoc() || redSoc >= config.maxSoc()) {
-			
-			// If redox above max or litIon below min. -> Prioritize charging litIon.
-			filterAndApplyPower(calculatedPower, litIon, litIonFilter);
-			filterAndApplyPower(0, redox, redoxFilter);
-		} else if(redSoc < config.maxSoc()) {
-			
-			// otherwise prioritize redox charging.
-			filterAndApplyPower(calculatedPower, redox, redoxFilter);
-			filterAndApplyPower(0, litIon, litIonFilter);	
-		}
-	}
-	
-	/**
-	 * Managed which ESS to discharge. Prioritizes {@code litIon}. If either {@code redox}'s SoC is above
-	 * its max. SoC or {@code litIon} is below its min. SoC, prioritize charging litIon.
-	 * The limits are set in the config. 
-	 * 
-	 * @param calcultedPower Value in [W] to which the activePower of the ESS is to be set.
-	 * @param redox	Redoxflow ESS, prioritized in charging.
-	 * @param litIon Lithium-Ion ESS.
-	 * @param redSoc SoC of {@code redox}.
-	 * @param litSoc SoC of {@code litIon}.
-	 * @throws OpenemsNamedException
-	 */
-	private void handleDischarge(int calcultedPower, ManagedSymmetricEss redox,
-			ManagedSymmetricEss litIon, int redSoc, int litSoc ) throws OpenemsNamedException {
-		if(redSoc >= config.maxSoc() || litSoc <= config.minSoc()) {
-			
-			/// If redox above max or litIon below min. -> Prioritize discharging redox.
-			filterAndApplyPower(calcultedPower, redox, redoxFilter);
-			filterAndApplyPower(0, litIon, litIonFilter);
-		} else if(litSoc > config.minSoc()) {
-			
-			// otherwise prioritize LitIon discharging.
-			filterAndApplyPower(calcultedPower, litIon, litIonFilter);
-			filterAndApplyPower(0, redox, redoxFilter);
-		}
 	}
 	
 	/**
