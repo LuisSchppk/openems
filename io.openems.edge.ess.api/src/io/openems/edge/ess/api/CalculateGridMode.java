@@ -57,4 +57,34 @@ public class CalculateGridMode {
 		}
 		return result;
 	}
+	
+	public static GridMode calculate(List<GridMode> values) {
+		if (values.isEmpty()) {
+			return GridMode.UNDEFINED;
+		}
+
+		var onGrids = 0;
+		var offGrids = 0;
+		for (GridMode gridMode : values) {
+			switch (gridMode) {
+			case OFF_GRID:
+				offGrids++;
+				break;
+			case ON_GRID:
+				onGrids++;
+				break;
+			case UNDEFINED:
+				break;
+			}
+		}
+
+		var result = GridMode.UNDEFINED;
+		if (values.size() == onGrids) {
+			result = GridMode.ON_GRID;
+		}
+		if (values.size() == offGrids) {
+			result = GridMode.OFF_GRID;
+		}
+		return result;
+	}
 }
