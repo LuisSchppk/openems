@@ -1,4 +1,4 @@
-package io.openems.edge.controller.ess.omei.hybrid;
+package io.openems.edge.controller.ess.hybridess;
 
 import java.time.Instant;
 import java.util.Arrays;
@@ -24,7 +24,7 @@ import io.openems.edge.common.sum.Sum;
 import io.openems.edge.controller.api.Controller;
 import io.openems.edge.ess.api.CalculateGridMode;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
-import io.openems.edge.ess.api.ManagedSymmetricEssOmei;
+import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
 import io.openems.edge.ess.power.api.Phase;
 import io.openems.edge.ess.power.api.Pwr;
 import io.openems.edge.meter.api.SymmetricMeter;
@@ -92,8 +92,8 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		 * ESSs as local variable to avoid Problems when updating config of a ESS during runtime.
 		 * -> look unto updatefilter 
 		 */
-		ManagedSymmetricEssOmei redox = this.componentManager.getComponent(this.config.redox_id());
-		ManagedSymmetricEssOmei liIon = this.componentManager.getComponent(this.config.litIon_id());
+		ManagedSymmetricEssHybrid redox = this.componentManager.getComponent(this.config.redox_id());
+		ManagedSymmetricEssHybrid liIon = this.componentManager.getComponent(this.config.litIon_id());
 		GridMode gridMode = CalculateGridMode.calculate(Arrays.asList(redox.getGridMode(), liIon.getGridMode()));
 		
 		
@@ -149,7 +149,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	 * @return Value in [0...1]
 	 * @throws InvalidValueException when ESS SoC could not be read.
 	 */
-	private double calculateSplitModifierPriority(ManagedSymmetricEssOmei redox, ManagedSymmetricEssOmei liOn, int calculatedPower) throws InvalidValueException {
+	private double calculateSplitModifierPriority(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
 		double splitModifier = 0;
 		double emergencyCharge = 0.25;		// TODO implement as parameter via config
 		double fastCharge = 0.5; 			// TODO implement as parameter via config
@@ -177,7 +177,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		return splitModifier;
 	}
 	
-	private double calculateSplitModifierResponseTime(ManagedSymmetricEssOmei redox, ManagedSymmetricEssOmei liOn, int calculatedPower) throws InvalidValueException {
+	private double calculateSplitModifierResponseTime(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
 		double splitModifier = 0;
 		
 		if(redox.isReady()) {
@@ -194,7 +194,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 	
 	// Here problems with the simple split idea...
-	private double calculateSplitModifierPowerStep(ManagedSymmetricEssOmei redox, ManagedSymmetricEssOmei liOn, int calculatedPower) throws InvalidValueException {
+	private double calculateSplitModifierPowerStep(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
 		double splitModifier = 0;
 		int deltaPower = calculatedPower - lastPower;
 		int powerStep = redox.getPowerStep();

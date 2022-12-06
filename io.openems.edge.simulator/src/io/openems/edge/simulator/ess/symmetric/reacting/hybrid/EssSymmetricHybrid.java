@@ -1,4 +1,4 @@
-package io.openems.edge.simulator.ess.symmetric.reacting.omei;
+package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -23,6 +23,7 @@ import org.osgi.service.metatype.annotations.Designate;
 import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.channel.Doc;
+import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
@@ -33,7 +34,7 @@ import io.openems.edge.common.modbusslave.ModbusSlaveTable;
 import io.openems.edge.common.startstop.StartStop;
 import io.openems.edge.common.startstop.StartStoppable;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
-import io.openems.edge.ess.api.ManagedSymmetricEssOmei;
+import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
 import io.openems.edge.ess.api.SymmetricEss;
 import io.openems.edge.ess.power.api.Power;
 import io.openems.edge.simulator.ess.symmetric.reacting.EssSymmetric;
@@ -49,8 +50,8 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 @EventTopics({ //
 		EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE //
 })
-public class EssSymmetricOmei extends AbstractOpenemsComponent 
-	implements ManagedSymmetricEssOmei, ManagedSymmetricEss, SymmetricEss, OpenemsComponent, TimedataProvider, EventHandler, StartStoppable, ModbusSlave {
+public class EssSymmetricHybrid extends AbstractOpenemsComponent 
+	implements ManagedSymmetricEssHybrid, ManagedSymmetricEss, SymmetricEss, OpenemsComponent, TimedataProvider, EventHandler, StartStoppable, ModbusSlave {
 	
 	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 		;
@@ -78,15 +79,9 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 	 */
 	private long responseTime;
 	
-	private Instant startRequested;
+	private Instant timestampStartup;
 	
-	private boolean powerRequested = false;
-	
-	private boolean ready;
-	
-	private int minSoc;
-	
-	private int maxSoc;
+	private Instant inactivityTimestamp;
 	
 	private OperatingStatus operatingStatus;
 	
@@ -103,6 +98,11 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 			SymmetricEss.ChannelId.ACTIVE_DISCHARGE_ENERGY);
 	
 	private final static int POWER_PRECISION = 1;
+
+	// TODO: After this duration ESS become inactive again.
+	private static final long ACTIVITY_TIME_OUT = Long.MAX_VALUE;
+	
+	private boolean ready;
 	
 	@Reference
 	private Power power;
@@ -116,7 +116,7 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 	@Reference(policy = ReferencePolicy.DYNAMIC, policyOption = ReferencePolicyOption.GREEDY, cardinality = ReferenceCardinality.OPTIONAL)
 	private volatile Timedata timedata = null;
 	
-	public EssSymmetricOmei(){
+	public EssSymmetricHybrid(){
 		super(//
 				OpenemsComponent.ChannelId.values(), //
 				SymmetricEss.ChannelId.values(), //
@@ -134,14 +134,13 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 				/ 100 * this.config.initialSoc() /* [current SoC] */);
 		this._setSoc(config.initialSoc());
 		this._setMaxApparentPower(config.maxApparentPower());
-		this._setAllowedChargePower(config.capacity() * -1);
-		this._setAllowedDischargePower(config.capacity());
+		this._setAllowedChargePower(config.allowedChargePower());
+		this._setAllowedDischargePower(config.allowedDischargePower());
 		this._setGridMode(config.gridMode());
 		this._setCapacity(config.capacity());
 		this.rampRate = config.rampRate();
 		this.responseTime = Duration.of(config.responseTime(), ChronoUnit.MILLIS).toSeconds();
 		this.ready = responseTime == 0;
-		this.operatingStatus = OperatingStatus.STANDBY;
 	}
 	
 	@Override
@@ -160,22 +159,27 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 		case EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE:
 			this.calculateEnergy();
 			
-			if(startRequested != null && Duration.between(startRequested, Instant.now()).toSeconds() >= responseTime) {
-				
-				// Ess is ready to provide power if its start has been requested and if the response time has elapsed.
-				this.ready = true;
-				
-				// reset response timer
-				this.startRequested = null;
-			} else if(activePower != 0) {
+			if(responseTimeElapsed()) {
+				ready = true;
+				timestampStartup = null;
+				inactivityTimestamp = null;
+			}
+			
+			if(activePower != 0) {
 				if(activePower > 0) {
 					this.operatingStatus = OperatingStatus.CHARGING;
 				} else {
 					this.operatingStatus = OperatingStatus.DISCHARGING;
 				}
+				inactivityTimestamp = null;
 			} else {
-				this.ready = this.responseTime == 0;
-				this.operatingStatus = OperatingStatus.STANDBY;
+				if(inactivityTimestamp == null) {
+					inactivityTimestamp = Instant.now();
+				}
+				if(inactivityTimeElapsed()) {
+					inactivityTimestamp = null;
+					ready = false;
+				}
 			}
 			
 			break;
@@ -265,20 +269,42 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 				+ this.getAllowedDischargePower().asString();
 	}
 	
+
 	@Override
-	public int getPowerStep() {
-		return rampRate;
+	public int[] calculatePossibleChargePower() {
+		int[] boundary = {0,0};
+		
+		if(!ready) {
+			beginStartTimer();
+		} else {
+			int currentPower = this.getActivePower().isDefined() ? this.getActivePower().get() : 0;
+			int allowedChargePower = this.getAllowedChargePower().isDefined() ? this.getAllowedChargePower().get() : 0;
+			
+			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc. 
+			boundary[0] = Math.max(currentPower - rampRate, allowedChargePower);
+			boundary[1] = Math.min(currentPower + rampRate, 0);
+		}
+		return boundary;
 	}
 	
-	@Override
-	public boolean isReady() {
-		return ready;
+	private boolean responseTimeElapsed() {
+		return timestampStartup != null && Duration.between(timestampStartup, Instant.now()).toSeconds() >= responseTime;
 	}
 	
+	private boolean inactivityTimeElapsed() {
+		return Duration.between(inactivityTimestamp, Instant.now()).toSeconds() >= ACTIVITY_TIME_OUT;
+	}
+
 	@Override
-	public void start() {
-		if(startRequested == null) {
-			startRequested = Instant.now();
+	public int[] calculatePossibleDischargePower() {
+		int[] boundary = {0,0};
+		// TODO Auto-generated method stub
+		return boundary;
+	}
+	
+	private void beginStartTimer() {
+		if(timestampStartup == null) {
+			this.timestampStartup = Instant.now();
 		}
 	}
 	
@@ -330,15 +356,5 @@ public class EssSymmetricOmei extends AbstractOpenemsComponent
 			}
 		}
 		return soc;
-	}
-
-	@Override
-	public int getMinSoc() {
-		return minSoc;
-	}
-
-	@Override
-	public int getMaxSoc() {
-		return maxSoc;
 	}
 }

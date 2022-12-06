@@ -3,6 +3,7 @@ package io.openems.edge.controller.ess.omei.hybrid;
 import java.lang.annotation.Annotation;
 
 import io.openems.common.test.AbstractComponentConfig;
+import io.openems.edge.controller.ess.hybridess.Config;
 
 @SuppressWarnings("all")
 public class MyConfig extends AbstractComponentConfig implements Config {

@@ -1,4 +1,4 @@
-package io.openems.edge.simulator.ess.symmetric.reacting.omei;
+package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
@@ -38,4 +38,10 @@ import io.openems.edge.common.sum.GridMode;
 	GridMode gridMode() default GridMode.ON_GRID;
 
 	String webconsole_configurationFactory_nameHint() default "Simulator EssSymmetric Reacting [{id}]";
+
+	@AttributeDefinition(name ="Allowed Discharge Power", description="Maximum amount of power in [W] this ESS can discharge. Has to be >= 0", min = "0")
+	int allowedDischargePower();
+
+	@AttributeDefinition(name="Allowed Charge Power", description="Maximum amount of power in [W] this ESS can be charged with. Has to be <=0", max = "0")
+	int allowedChargePower();
 }

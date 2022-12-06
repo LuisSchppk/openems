@@ -3,6 +3,7 @@ package io.openems.edge.controller.ess.omei.hybrid;
 import org.junit.Test;
 
 import io.openems.edge.common.test.AbstractComponentTest.TestCase;
+import io.openems.edge.controller.ess.hybridess.HybridControllerImpl;
 import io.openems.edge.controller.test.ControllerTest;
 
 public class MyControllerTest {

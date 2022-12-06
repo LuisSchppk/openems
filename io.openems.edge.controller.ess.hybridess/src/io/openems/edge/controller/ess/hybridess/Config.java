@@ -1,4 +1,4 @@
-package io.openems.edge.controller.ess.omei.hybrid;
+package io.openems.edge.controller.ess.hybridess;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;

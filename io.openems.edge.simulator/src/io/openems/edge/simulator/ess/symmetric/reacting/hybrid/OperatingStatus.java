@@ -1,4 +1,4 @@
-package io.openems.edge.simulator.ess.symmetric.reacting.omei;
+package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 
 import io.openems.common.types.OptionsEnum;
 
