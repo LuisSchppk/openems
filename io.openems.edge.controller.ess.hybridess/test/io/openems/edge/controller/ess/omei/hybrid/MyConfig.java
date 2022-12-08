@@ -10,7 +10,13 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 
 	protected static class Builder {
 		private String id;
-//		private String setting0;
+		private String redoxId;
+		private String liIonId;
+		private String meterId;
+		private String energyPrediction;
+		private String powerPrediction;
+		private int defaultMinimumEnergy;
+		private int maxGridPower;
 
 		private Builder() {
 		}
@@ -19,11 +25,41 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 			this.id = id;
 			return this;
 		}
-
-//		public Builder setSetting0(String setting0) {
-//			this.setting0 = setting0;
-//			return this;
-//		}
+		
+		public Builder setRedoxId(String redoxId) {
+			this.redoxId=redoxId;
+			return this;
+		}
+		
+		public Builder setLiIonId(String liIonId) {
+			this.liIonId = liIonId;
+			return this;
+		}
+		
+		public Builder setMeterId(String meterId) {
+			this.meterId = meterId;
+			return this;
+		}
+		
+		public Builder setEnergyPrediction(String energyPrediction) {
+			this.energyPrediction = energyPrediction;
+			return this;
+		}
+		
+		public Builder setPowerPrediction(String powerPrediction) {
+			this.powerPrediction = powerPrediction;
+			return this;
+		}
+		
+		public Builder setDefaultMinimumEnergy(int defaultMinimumEnergy) {
+			this.defaultMinimumEnergy = defaultMinimumEnergy;
+			return this;
+		}
+		
+		public Builder setMaxGridPower(int maxGridPower) {
+			this.maxGridPower = maxGridPower;
+			return this;
+		}
 
 		public MyConfig build() {
 			return new MyConfig(this);
@@ -46,69 +82,46 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		this.builder = builder;
 	}
 
-	@Override
-	public Class<? extends Annotation> annotationType() {
-		// TODO Auto-generated method stub
-		return null;
-	}
 
 	@Override
 	public String id() {
-		// TODO Auto-generated method stub
-		return null;
+		return this.builder.id;
 	}
 
 	@Override
-	public String alias() {
-		// TODO Auto-generated method stub
-		return null;
+	public String redoxId() {
+		return this.builder.redoxId;
+	}
+	
+	@Override
+	public String liIonId() {
+		return this.builder.liIonId;
 	}
 
 	@Override
-	public boolean enabled() {
-		// TODO Auto-generated method stub
-		return false;
+	public String meterId() {
+		return this.builder.meterId;
 	}
 
 	@Override
-	public String webconsole_configurationFactory_nameHint() {
-		// TODO Auto-generated method stub
-		return null;
+	public String energyPrediction() {
+		return this.builder.energyPrediction;
 	}
 
 	@Override
-	public String redox_id() {
-		// TODO Auto-generated method stub
-		return null;
+	public String powerPrediction() {
+		return this.builder.powerPrediction;
 	}
 
 	@Override
-	public String litIon_id() {
-		// TODO Auto-generated method stub
-		return null;
+	public int defaultMinimumEnergy() {
+		return this.builder.defaultMinimumEnergy;
 	}
 
 	@Override
-	public String meter_id() {
-		// TODO Auto-generated method stub
-		return null;
+	public int maxGridPower() {
+		return this.builder.maxGridPower;
 	}
 
-	@Override
-	public int minSoc() {
-		// TODO Auto-generated method stub
-		return 0;
-	}
-
-	@Override
-	public int maxSoc() {
-		// TODO Auto-generated method stub
-		return 0;
-	}
-
-//	@Override
-//	public String setting0() {
-//		return this.builder.setting0;
-//	}
-
+	
 }

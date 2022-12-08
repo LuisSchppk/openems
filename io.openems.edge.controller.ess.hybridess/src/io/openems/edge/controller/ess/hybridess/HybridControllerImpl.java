@@ -1,7 +1,11 @@
 package io.openems.edge.controller.ess.hybridess;
 
-import java.time.Instant;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -18,15 +22,12 @@ import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
-import io.openems.edge.common.filter.PidFilter;
 import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.sum.Sum;
 import io.openems.edge.controller.api.Controller;
+import io.openems.edge.controller.ess.hybridess.CSVUtil.Row;
 import io.openems.edge.ess.api.CalculateGridMode;
-import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
-import io.openems.edge.ess.power.api.Phase;
-import io.openems.edge.ess.power.api.Pwr;
 import io.openems.edge.meter.api.SymmetricMeter;
 
 @Designate(ocd = Config.class, factory = true)
@@ -36,27 +37,20 @@ import io.openems.edge.meter.api.SymmetricMeter;
 		configurationPolicy = ConfigurationPolicy.REQUIRE //
 )
 public class HybridControllerImpl extends AbstractOpenemsComponent implements HybridController, Controller, OpenemsComponent {
-	
-	// Values for PIDFilter
-	private final static double P = 0.3;
-	private final static double I = 0.3;
-	private final static double D = 0.1;
 
 	private final Logger log = LoggerFactory.getLogger(HybridControllerImpl.class);
 		
-	/*
-	 * Workaround for unexpected PidFilter behavior. 
-	 * Both ESS use the same power object, which only has one pidFilter object.
-	 * Therefore both activePowerValues are calculated with the same filter, which leads to faults,
-	 * as the calculation is not memoryless.  
-	 */
-	private PidFilter redoxFilter = new PidFilter(P,I,D);
-	private PidFilter liIonFilter = new PidFilter(P,I,D);
 	private Config config = null;
 	
-	private Instant redoxPowerRequested;
+	private File energyPrediction;
+	private File powerPrediction;
 	
-	private int lastPower;
+	/**
+	 * Minimal total Energy that should be stored by 
+	 * ESSs to ensure EVs can be serviced.
+	 */
+	private int defaultMinimalEnergy;
+	private int maxGridPower;
 
 	@Reference
 	private ComponentManager componentManager;
@@ -76,7 +70,17 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	void activate(ComponentContext context, Config config) {
 		super.activate(context, config.id(), config.alias(), config.enabled());
 		this.config = config;
-		lastPower = 0;
+		this.energyPrediction = Path.of(config.energyPrediction()).toFile();
+		this.powerPrediction = Path.of(config.powerPrediction()).toFile();
+		this.defaultMinimalEnergy = config.defaultMinimumEnergy()/* kWh to Wh*/ * 1000;
+		this.maxGridPower = config.maxGridPower() /* kW to W*/ * 1000;
+		if(!Files.exists(energyPrediction.toPath())) {
+			this.logInfo(log, String.format("Energy prediction at %s not found", energyPrediction.toPath()));
+		}
+		
+		if(!Files.exists(powerPrediction.toPath())) {
+			this.logInfo(log, String.format("Power prediction at %s not found", powerPrediction.toPath()));
+		}
 	}
 
 	@Deactivate
@@ -86,23 +90,14 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 
 	@Override
 	public void run() throws OpenemsNamedException {
-		SymmetricMeter meter = this.componentManager.getComponent(this.config.meter_id());
 		
 		/*
 		 * ESSs as local variable to avoid Problems when updating config of a ESS during runtime.
 		 * -> look unto updatefilter 
 		 */
-		ManagedSymmetricEssHybrid redox = this.componentManager.getComponent(this.config.redox_id());
-		ManagedSymmetricEssHybrid liIon = this.componentManager.getComponent(this.config.litIon_id());
+		ManagedSymmetricEssHybrid redox = this.componentManager.getComponent(this.config.redoxId());
+		ManagedSymmetricEssHybrid liIon = this.componentManager.getComponent(this.config.liIonId());
 		GridMode gridMode = CalculateGridMode.calculate(Arrays.asList(redox.getGridMode(), liIon.getGridMode()));
-		
-		
-		/*
-		 * OPENEMS calls this every cycle. Therefore I do the same. Maybe it would be more efficient
-		 * to call it once during init?
-		 */
-//		configurePid(redox, redoxFilter);
-//		configurePid(liIon, liIonFilter);
 		
 		switch(gridMode) {
 		case UNDEFINED:
@@ -114,17 +109,52 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 			return;
 		}
 		
-		// Power the ESSs needs to charge/ discharge to meet the required GridSetpoint
-		int calculatedPower = calculatePower(meter, calculateGridSetpoint());
-		double splitModifier = calculateSplitModifierResponseTime(redox, liIon, calculatedPower);
+		// TODO Handling of different operating status.
+		// TODO Handle distinction charging / discharging.
+		this.charge(redox, liIon);
 		
-		int splitPower = (int) (splitModifier * calculatedPower);
-		redox.setActivePowerEquals(splitPower);
-		liIon.setActivePowerEquals(calculatedPower-splitPower);
+	}
+	
+	private void charge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
+		int targetGridSetPoint = 0;
+		int minimalStoredEnergy = getMinimalStoredEnergy();
+		if(minimalStoredEnergy >= this.getTotalStoredCapacity()) {
+			targetGridSetPoint = -this.maxGridPower;
+		} else {
+			targetGridSetPoint = getPredictedPower();
+		}
+		
+		if(targetGridSetPoint > 0) {
+			
+			/* 
+			 * TODO In this case Prediction recommends discharging.
+			 * In this case this branch should probably not even be entered.
+			 * As interim solution: set to 0
+			 */
+			targetGridSetPoint = 0;
+		}
+		
+		// Use negative value, as negative = charging.
+		int chargePower = targetGridSetPoint - this.getTotalProductionEnergy();
+		
+		// TODO Power split.
+		double powerSplit = 0.5;
+		
+		/*
+		 *  TODO Handle undefined AllowedChargePower channels.
+		 *  Either by implementing method like getTotalProductionEnergy which informs on undefined
+		 *  or by using orElse() -> Omits undefined.
+		 *  
+		 *  Right now throws nullPointerException on undefined.
+		 */
+		int redoxPower = Math.max((int)(powerSplit*chargePower), redox.getAllowedChargePower().get());
+		int liIonPower = Math.max(chargePower-redoxPower, liIon.getAllowedChargePower().get());
+		
+		redox.setActivePowerEquals(redoxPower);
+		liIon.setActivePowerEquals(liIonPower);
+		
 		redox.setReactivePowerEquals(0);
 		liIon.setReactivePowerEquals(0);
-//		filterAndApplyPower(splitPower, redox,redoxFilter);
-//		filterAndApplyPower(calculatedPower - splitPower, liIon, liIonFilter);
 	}
 	
 	/**
@@ -138,85 +168,6 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		// Consider Prediction
 		// Consider Energy Prices
 		return 0;
-	}
-	
-	/**
-	 * Determines ratio of available active power each ESS should receive, based on
-	 * SoC, available capacity, C-Rate and  Allowed Dis-/Charge Power.
-	 * 1 redox receives all power.
-	 * 0 liIon receives all power
-	 * 
-	 * @return Value in [0...1]
-	 * @throws InvalidValueException when ESS SoC could not be read.
-	 */
-	private double calculateSplitModifierPriority(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
-		double splitModifier = 0;
-		double emergencyCharge = 0.25;		// TODO implement as parameter via config
-		double fastCharge = 0.5; 			// TODO implement as parameter via config
-		
-		int litSoc = liOn.getSoc().getOrError();
-		int redSoc = redox.getSoc().getOrError();
-		
-		if(calculatedPower <= 0) {
-			splitModifier = 1.0 - redSoc/100.0; 
-			
-			// Supply min. Power if LiOn is below certain limit.
-			if(litSoc <= liOn.getMinSoc()) {		// TODO maybe min/maxSoc as parameter for Controller?
-				splitModifier = Math.min(splitModifier, emergencyCharge);
-			} else if (litSoc <= liOn.getMinSoc() * 2) {
-				splitModifier = Math.min(splitModifier, fastCharge);
-			}
-			
-		} else {
-			splitModifier = 1.0 - litSoc/ 100.0;
-		}
-		
-		if(splitModifier < 0 || splitModifier > 1) {
-			throw new IllegalArgumentException("Invalid Split.");
-		}
-		return splitModifier;
-	}
-	
-	private double calculateSplitModifierResponseTime(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
-		double splitModifier = 0;
-		
-		if(redox.isReady()) {
-			splitModifier = calculateSplitModifierPriority(redox, liOn, calculatedPower);
-		} else {
-			redox.start();
-			splitModifier = 0;
-		}
-		
-		if(splitModifier < 0 || splitModifier > 1) {
-			throw new IllegalArgumentException("Invalid Split.");
-		}
-		return splitModifier;
-	}
-	
-	// Here problems with the simple split idea...
-	private double calculateSplitModifierPowerStep(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liOn, int calculatedPower) throws InvalidValueException {
-		double splitModifier = 0;
-		int deltaPower = calculatedPower - lastPower;
-		int powerStep = redox.getPowerStep();
-		
-		if(deltaPower <= 0) {
-			if(-deltaPower <= redox.getPowerStep()) {
-				
-				// redox can reduce power output sufficiently
-				splitModifier = 1;
-			} else if(calculatedPower <= 0) {
-
-			} else if( calculatedPower > 0) {
-				
-			}
-		} else {
-			
-		}
-
-		if(splitModifier < 0 || splitModifier > 1) {
-			throw new IllegalArgumentException("Invalid Split.");
-		}
-		return splitModifier;
 	}
 	
 	/**
@@ -236,51 +187,67 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 				- targetGridSetpoint; /* the configured target setpoint */
 	}
 	
-	/**
-	 * Sets minimum and maximum charging power as the limits on the output value of the {@code pidFilter}.
-	 * 
-	 * @param ess
-	 * @param pidFilter
-	 */
-	private void configurePid(ManagedSymmetricEss ess, PidFilter pidFilter) {
-		var power = ess.getPower();
-		var minPower = power.getMinPower(ess, Phase.ALL, Pwr.ACTIVE);
-		var maxPower = power.getMaxPower(ess, Phase.ALL, Pwr.ACTIVE);
-		if (maxPower < minPower) {
-			maxPower = minPower; // avoid rounding error
+	private int getMinimalStoredEnergy() {
+		int minimalEnergy = this.defaultMinimalEnergy;
+
+		// TODO duplicate Code, maybe use aux. method.
+		// TODO change to global timestamp of cycle?
+		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
+		List<Row> csvRows = CSVUtil.parseEnergyPrediction(energyPrediction);
+
+		// No streams in Java 11...
+		for(Row row : csvRows) {
+			if(now.isAfter(row.getStart()) && now.isBefore(row.getEnd())) {
+				if(row.getValue() < 0) {
+					this.logInfo(log, String.format("Invalid value %s for minimal stored energy.", row.getValue()));
+				} else {
+					minimalEnergy = row.getValue();
+				}
+			}
 		}
-		pidFilter.setLimits(minPower, maxPower);
+		return minimalEnergy;
+	}
+
+	private int getPredictedPower() {
+		int predictedPower = 0;
+
+		// TODO duplicate Code, maybe use aux. method.
+		// TODO change to global timestamp of cycle?
+		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
+		List<Row> csvRows = CSVUtil.parseEnergyPrediction(powerPrediction);
+
+		// No streams in Java 11...
+		for(Row row : csvRows) {
+			if(now.isAfter(row.getStart()) && now.isBefore(row.getEnd())) {
+				if(row.getValue() < 0) {
+					this.logInfo(log, String.format("Invalid value %s for minimal stored energy.", row.getValue()));
+				} else {
+					predictedPower = row.getValue();
+				}
+			}
+		}
+
+		return predictedPower;
+	}
+
+	private int getTotalStoredCapacity() {
+		int totalCapacity = 0;
+		if(sum.getEssCapacity().isDefined()) {
+			totalCapacity = sum.getEssCapacity().get();
+		} else {
+			logInfo(log, "Could not calculate totalCapacity correctly. Capacity Channel undefinded.");
+		}
+		return totalCapacity;
 	}
 	
-	/**
-	 * Filters the calculatedPower according to the {@code pidFilter} 
-	 * and sets it as active power to the ess.
-	 * 
-	 * @param calculatedPower
-	 * @param ess
-	 * @param pidFilter
-	 * @throws OpenemsNamedException
-	 */
-	private void filterAndApplyPower(int calculatedPower, ManagedSymmetricEss ess, PidFilter pidFilter) throws OpenemsNamedException {
-			int currentActivePower = ess.getActivePower().orElse(0);
-			var pidOutput = pidFilter.applyPidFilter(currentActivePower, calculatedPower);
-			ess.setActivePowerEquals(pidOutput);
+	private int getTotalProductionEnergy() {
+		int totalProductionEnergy = 0;
+		if(sum.getProductionActivePower().isDefined()) {
+			totalProductionEnergy = sum.getProductionActivePower().get();
+		} else {
+			logInfo(log, "Could not calculate totalCapacity correctly. Capacity Channel undefinded.");
+		}
+		return totalProductionEnergy;
 	}
 	
-	private boolean isOnGrid(ManagedSymmetricEss ess) {
-		boolean isOnGrid = false;
-		var gridMode = ess.getGridMode();
-		if (gridMode.isUndefined()) {
-			this.logWarn(this.log, "Grid-Mode is [UNDEFINED]");
-		}
-		switch (gridMode) {
-		case ON_GRID:
-		case UNDEFINED:
-			isOnGrid = true;
-			break;
-		case OFF_GRID:
-		default: isOnGrid = false;
-		}
-		return isOnGrid;
-	}
 }

@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 
 import org.junit.Test;
@@ -41,11 +42,17 @@ public class EssSymmetricHybridTest {
 	private static final ChannelAddress ESS_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(ESS_ID,
 			"SetActivePowerEquals");
 	
+	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(ESS_ID, "PossibleChargePowerUpperLimit");
+	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(ESS_ID, "PossibleChargePowerLowerLimit");
+	
+	final TimeLeapClock clock = new TimeLeapClock(Instant.now(), ZoneOffset.UTC);
+	
+	
 	private ManagedSymmetricEssHybridTest setup(String ess_id, int capacity, int maxApparentPower, int SoC, GridMode gridMode,
 			int rampRate, int responseTime, int chargePower, int dischargePower) throws OpenemsException, Exception {
 		return new ManagedSymmetricEssHybridTest(new EssSymmetricHybrid()) //
 				.addReference("cm", new DummyConfigurationAdmin()) //
-				.addReference("componentManager", new DummyComponentManager()) //
+				.addReference("componentManager", new DummyComponentManager(clock)) //
 				.addReference("power", new DummyPower()) //
 				.activate(MyConfig.create() //
 						.setId(ess_id) //
@@ -64,32 +71,58 @@ public class EssSymmetricHybridTest {
 		return this.setup(ESS_ID, CAPACITY, MAX_APPARENT_POWER, SOC, GridMode.ON_GRID, RAMP_RATE, RESPONSE_TIME, CHARGE_POWER, DISCHARGE_POWER);
 	}
 	
+	/*
+	 * Test if logic for no response time works.
+	 * ESS should be able to charge right away. 
+	 */
 	@Test
-	public void responseTimeNotReady() throws OpenemsException, Exception {
-		ManagedSymmetricEssHybridTest testEss = setup();
-		int[] possibleChargePower = testEss.getSut().calculatePossibleChargePower();
-		assertEquals(0, possibleChargePower[0]);
-		assertEquals(0, possibleChargePower[1]);
+	public void noResponseTime() throws OpenemsException, Exception {
+		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
+				CAPACITY,
+				MAX_APPARENT_POWER,
+				SOC, GridMode.ON_GRID,
+				RAMP_RATE,
+				0, // RESPONSE TIME = 15min
+				CHARGE_POWER,
+				DISCHARGE_POWER);
+		testEss.next(new TestCase()
+				.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE)
+				.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0));
 	}
 	
-	
-	// Not working as values do not get written to channel. I have to use the openems test framework
 	@Test
-	public void responseTimeReady() throws OpenemsException, Exception {
-		ManagedSymmetricEssHybridTest testEss = setup();
-		int[] possibleChargePower = testEss.getSut().calculatePossibleChargePower();
-		sleep(2000); // sleep for at least response time
-		testEss.getSut().handleEvent(new Event(EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE, Collections.emptyMap()));
-		possibleChargePower = testEss.getSut().calculatePossibleChargePower();
+	public void responseTime() throws OpenemsException, Exception {
 		
-		// WARNING: ActivePower Channel not defined. Gets caught and assigned to 0 due to defensive programming. Need test for actual ramping.
-		assertEquals(-RAMP_RATE, possibleChargePower[0]);
-		assertEquals(0, possibleChargePower[1]);
-	}
-
-	private void sleep(int i) {
-		// TODO Auto-generated method stub
-		
+		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
+				CAPACITY,
+				MAX_APPARENT_POWER,
+				SOC, GridMode.ON_GRID,
+				RAMP_RATE,
+				1000*60*15, // RESPONSE TIME = 15min
+				CHARGE_POWER,
+				DISCHARGE_POWER);
+		testEss.next(new TestCase() // Response time not elapsed.
+					.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0))
+				.next(new TestCase() // Response time elapsed
+					.timeleap(clock, 15, ChronoUnit.MINUTES) // wait for response time to elapse.
+					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE)
+					.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0));
 	}
 	
+	@Test
+	public void ramping() {
+		// Specify ramping behavior and common timestamp first.
+	}
+	
+	public void maxPowerInput() throws OpenemsException, Exception {
+		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
+				CAPACITY,
+				MAX_APPARENT_POWER,
+				SOC, GridMode.ON_GRID,
+				RAMP_RATE,
+				0, // RESPONSE TIME = 0
+				CHARGE_POWER,
+				DISCHARGE_POWER);
+	}
 }

@@ -23,7 +23,6 @@ import org.osgi.service.metatype.annotations.Designate;
 import io.openems.common.channel.AccessMode;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.channel.Doc;
-import io.openems.edge.common.channel.value.Value;
 import io.openems.edge.common.component.AbstractOpenemsComponent;
 import io.openems.edge.common.component.ComponentManager;
 import io.openems.edge.common.component.OpenemsComponent;
@@ -53,7 +52,7 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 public class EssSymmetricHybrid extends AbstractOpenemsComponent 
 	implements ManagedSymmetricEssHybrid, ManagedSymmetricEss, SymmetricEss, OpenemsComponent, TimedataProvider, EventHandler, StartStoppable, ModbusSlave {
 	
-	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
+public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 		;
 		private final Doc doc;
 
@@ -121,6 +120,7 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 				OpenemsComponent.ChannelId.values(), //
 				SymmetricEss.ChannelId.values(), //
 				ManagedSymmetricEss.ChannelId.values(), //
+				ManagedSymmetricEssHybrid.ChannelId.values(),
 				StartStoppable.ChannelId.values(), //
 				ChannelId.values() //
 		);
@@ -157,13 +157,15 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 		}
 		switch (event.getTopic()) {
 		case EdgeEventConstants.TOPIC_CYCLE_AFTER_PROCESS_IMAGE:
-			this.calculateEnergy();
 			
 			if(responseTimeElapsed()) {
 				ready = true;
 				timestampStartup = null;
 				inactivityTimestamp = null;
 			}
+			this.calculateEnergy();
+			this.calculatePossibleChargePower();
+			this.calculatePossibleDischargePower();;
 			
 			if(activePower != 0) {
 				if(activePower > 0) {
@@ -174,7 +176,7 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 				inactivityTimestamp = null;
 			} else {
 				if(inactivityTimestamp == null) {
-					inactivityTimestamp = Instant.now();
+					inactivityTimestamp = Instant.now(componentManager.getClock());
 				}
 				if(inactivityTimeElapsed()) {
 					inactivityTimestamp = null;
@@ -270,10 +272,9 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 	}
 	
 
-	@Override
-	public int[] calculatePossibleChargePower() {
-		int[] boundary = {0,0};
-		
+	private void calculatePossibleChargePower() {
+		int lowerChargePower = 0;
+		int upperChargePower = 0;
 		if(!ready) {
 			beginStartTimer();
 		} else {
@@ -281,35 +282,38 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 			int allowedChargePower = this.getAllowedChargePower().isDefined() ? this.getAllowedChargePower().get() : 0;
 			
 			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc. 
-			boundary[0] = Math.max(currentPower - rampRate, allowedChargePower);
-			boundary[1] = Math.min(currentPower + rampRate, 0);
+			lowerChargePower = Math.max(currentPower - rampRate, allowedChargePower);
+			upperChargePower = Math.min(currentPower + rampRate, 0);
 		}
-		return boundary;
+		this._setLowerPossibleChargePower(lowerChargePower);
+		this._setUpperPossibleChargePower(upperChargePower);
 	}
 	
 	private boolean responseTimeElapsed() {
-		return timestampStartup != null && Duration.between(timestampStartup, Instant.now()).toSeconds() >= responseTime;
+	
+		return timestampStartup != null && Duration.between(timestampStartup, Instant.now(componentManager.getClock())).toSeconds() >= responseTime;
 	}
 	
 	private boolean inactivityTimeElapsed() {
-		return Duration.between(inactivityTimestamp, Instant.now()).toSeconds() >= ACTIVITY_TIME_OUT;
+		return Duration.between(inactivityTimestamp, Instant.now(componentManager.getClock())).toSeconds() >= ACTIVITY_TIME_OUT;
 	}
 
-	@Override
-	public int[] calculatePossibleDischargePower() {
-		int[] boundary = {0,0};
+	private void calculatePossibleDischargePower() {
 		// TODO Auto-generated method stub
-		return boundary;
 	}
 	
 	private void beginStartTimer() {
 		if(timestampStartup == null) {
-			this.timestampStartup = Instant.now();
+			this.timestampStartup = Instant.now(componentManager.getClock());
 		}
 	}
 	
 	/**
 	 * Calculate the Energy values from ActivePower.
+	 * 
+	 * TODO {@link CalculateEnergyFromPower#update(Integer)} does not use 
+	 * the shared clock e.g. {@code Instant.now()} instead of Instant.now(componentManager.getClock()).
+	 * This could produce errors during simulation and testing on timeleaps, faster clock etc.
 	 */
 	private void calculateEnergy() {
 		// Calculate Energy
@@ -332,7 +336,7 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 	private int calculateSoc(Instant now) {
 		int soc = this.config.initialSoc();
 		
-		// Check if this is not the inital run
+		// Check if this is not the initial run
 		if (this.lastTimestamp != null) {
 			// calculate duration since last value
 			long duration /* [msec] */ = Duration.between(this.lastTimestamp, now).toMillis();
