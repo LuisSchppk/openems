@@ -1,8 +1,5 @@
 package io.openems.edge.ess.api;
 
-import java.util.Collection;
-import java.util.Collections;
-
 import io.openems.common.channel.Unit;
 import io.openems.common.types.OpenemsType;
 import io.openems.edge.common.channel.Doc;

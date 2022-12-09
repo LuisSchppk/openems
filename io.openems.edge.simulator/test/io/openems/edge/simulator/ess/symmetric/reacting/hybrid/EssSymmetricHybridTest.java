@@ -1,25 +1,12 @@
 package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-
-import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Collections;
-
 import org.junit.Test;
-import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.event.Event;
-
 import io.openems.edge.common.test.AbstractComponentTest.TestCase;
-import io.openems.common.event.EventBuilder;
 import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.types.ChannelAddress;
-import io.openems.edge.common.cycle.Cycle;
-import io.openems.edge.common.event.EdgeEventConstants;
 import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.test.DummyComponentManager;
 import io.openems.edge.common.test.DummyConfigurationAdmin;
