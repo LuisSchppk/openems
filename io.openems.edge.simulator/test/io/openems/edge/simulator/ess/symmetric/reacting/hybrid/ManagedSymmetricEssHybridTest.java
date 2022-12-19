@@ -3,7 +3,7 @@ package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 import io.openems.common.exceptions.OpenemsException;
 import io.openems.common.exceptions.OpenemsError.OpenemsNamedException;
 import io.openems.edge.common.test.AbstractComponentTest;
-import io.openems.edge.ess.api.ManagedSymmetricEss;
+import io.openems.edge.simulator.ess.symmetric.hybrid.EssSymmetricHybrid;
 
 public class ManagedSymmetricEssHybridTest extends AbstractComponentTest<ManagedSymmetricEssHybridTest, EssSymmetricHybrid> {
 

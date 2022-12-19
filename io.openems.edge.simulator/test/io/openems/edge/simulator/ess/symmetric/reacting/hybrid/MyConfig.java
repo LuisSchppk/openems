@@ -2,6 +2,7 @@ package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 
 import io.openems.common.test.AbstractComponentConfig;
 import io.openems.edge.common.sum.GridMode;
+import io.openems.edge.simulator.ess.symmetric.hybrid.Config;
 
 @SuppressWarnings("all")
 public class MyConfig extends AbstractComponentConfig implements Config {

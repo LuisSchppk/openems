@@ -3,6 +3,11 @@ package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+
+import io.openems.edge.ess.api.ManagedSymmetricEss;
+import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
+import io.openems.edge.ess.api.SymmetricEss;
+import io.openems.edge.simulator.ess.symmetric.hybrid.EssSymmetricHybrid;
 import org.junit.Test;
 import io.openems.edge.common.test.AbstractComponentTest.TestCase;
 import io.openems.common.exceptions.OpenemsException;
@@ -25,12 +30,14 @@ public class EssSymmetricHybridTest {
 	private static final int CHARGE_POWER = -100_000;
 	private static final int DISCHARGE_POWER = 100_000;
 
-	private static final ChannelAddress ESS_SOC = new ChannelAddress(ESS_ID, "Soc");
+	private static final ChannelAddress ESS_SOC = new ChannelAddress(ESS_ID, SymmetricEss.ChannelId.SOC.id());
 	private static final ChannelAddress ESS_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(ESS_ID,
-			"SetActivePowerEquals");
+			ManagedSymmetricEss.ChannelId.SET_ACTIVE_POWER_EQUALS.id());
 	
-	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(ESS_ID, "PossibleChargePowerUpperLimit");
-	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(ESS_ID, "PossibleChargePowerLowerLimit");
+	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
 	
 	final TimeLeapClock clock = new TimeLeapClock(Instant.now(), ZoneOffset.UTC);
 	
@@ -69,10 +76,12 @@ public class EssSymmetricHybridTest {
 				MAX_APPARENT_POWER,
 				SOC, GridMode.ON_GRID,
 				RAMP_RATE,
-				0, // RESPONSE TIME = 15min
+				0, // No RESPONSE TIME
 				CHARGE_POWER,
 				DISCHARGE_POWER);
 		testEss.next(new TestCase()
+				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, RAMP_RATE)
 				.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE)
 				.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0));
 	}
@@ -89,27 +98,22 @@ public class EssSymmetricHybridTest {
 				CHARGE_POWER,
 				DISCHARGE_POWER);
 		testEss.next(new TestCase() // Response time not elapsed.
+				    .output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 0)
+					.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
 					.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0))
-				.next(new TestCase() // Response time elapsed
+					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0));
+		
+		testEss.getSut().filterPower(1); // Begin startup time.
+		testEss.next(new TestCase() // Response time elapsed
 					.timeleap(clock, 15, ChronoUnit.MINUTES) // wait for response time to elapse.
+					.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+					.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, RAMP_RATE)
 					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE)
 					.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0));
 	}
 	
 	@Test
-	public void ramping() {
+	public void rampingUp() {
 		// Specify ramping behavior and common timestamp first.
-	}
-	
-	public void maxPowerInput() throws OpenemsException, Exception {
-		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
-				CAPACITY,
-				MAX_APPARENT_POWER,
-				SOC, GridMode.ON_GRID,
-				RAMP_RATE,
-				0, // RESPONSE TIME = 0
-				CHARGE_POWER,
-				DISCHARGE_POWER);
 	}
 }

@@ -1,4 +1,4 @@
-package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
+package io.openems.edge.simulator.ess.symmetric.hybrid;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
@@ -8,7 +8,7 @@ import io.openems.edge.common.sum.GridMode;
 @ObjectClassDefinition(//
 		name = "Simulator EssSymmetric Reacting OMEI", //
 		description = "This simulates a 'reacting' symmetric Energy Storage System.")
-@interface Config {
+public @interface Config {
 
 	@AttributeDefinition(name = "Component-ID", description = "Unique ID of this Component")
 	String id() default "ess0";

@@ -1,10 +1,11 @@
-package io.openems.edge.simulator.ess.symmetric.reacting.hybrid;
+package io.openems.edge.simulator.ess.symmetric.hybrid;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
+import io.openems.common.exceptions.InvalidValueException;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -51,8 +52,8 @@ import io.openems.edge.timedata.api.utils.CalculateEnergyFromPower;
 })
 public class EssSymmetricHybrid extends AbstractOpenemsComponent 
 	implements ManagedSymmetricEssHybrid, ManagedSymmetricEss, SymmetricEss, OpenemsComponent, TimedataProvider, EventHandler, StartStoppable, ModbusSlave {
-	
-public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
+
+	public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 		;
 		private final Doc doc;
 
@@ -245,7 +246,7 @@ public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 
 	@Override
 	public void setStartStop(StartStop value) throws OpenemsNamedException {
-		this.setStartStop(value);
+		this._setStartStop(value);
 	}
 
 	@Override
@@ -270,23 +271,67 @@ public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 				+ "|Allowed:" + this.getAllowedChargePower().asStringWithoutUnit() + ";"
 				+ this.getAllowedDischargePower().asString();
 	}
-	
+
+	@Override
+	public int filterPower(int targetPower) {
+		int filteredPower = targetPower;
+		int upperLimit = 0;
+		int lowerLimit = 0;
+
+		if(!ready && targetPower != 0) {
+			beginStartTimer();
+			filteredPower = 0;
+		} else if (targetPower >= 0){
+			// Discharging
+
+			upperLimit = this.getUpperPossibleDischargePower().orElse(0);
+			lowerLimit = this.getLowerPossibleDischargePower().orElse(0);
+		} else {
+			// Charging
+
+			upperLimit = this.getUpperPossibleChargePower().orElse(0);
+			lowerLimit = this.getLowerPossibleChargePower().orElse(0);
+		}
+
+		if(targetPower > upperLimit) {
+			filteredPower = upperLimit;
+		} else if(targetPower < lowerLimit) {
+			filteredPower = lowerLimit;
+		}
+
+		return filteredPower;
+	}
 
 	private void calculatePossibleChargePower() {
 		int lowerChargePower = 0;
 		int upperChargePower = 0;
-		if(!ready) {
-			beginStartTimer();
-		} else {
-			int currentPower = this.getActivePower().isDefined() ? this.getActivePower().get() : 0;
-			int allowedChargePower = this.getAllowedChargePower().isDefined() ? this.getAllowedChargePower().get() : 0;
-			
-			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc. 
+		if(ready) {
+			int currentPower = this.getActivePower().orElse(0);
+			int allowedChargePower = this.getAllowedChargePower().orElse(0);
+
+			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
+			// TODO: Down  Ramp Rate
 			lowerChargePower = Math.max(currentPower - rampRate, allowedChargePower);
 			upperChargePower = Math.min(currentPower + rampRate, 0);
 		}
 		this._setLowerPossibleChargePower(lowerChargePower);
 		this._setUpperPossibleChargePower(upperChargePower);
+	}
+
+	private void calculatePossibleDischargePower() {
+		int lowerChargePower = 0;
+		int upperChargePower = 0;
+		if(ready) {
+			int currentPower = this.getActivePower().orElse(0);
+			int allowedDischargePower = this.getAllowedDischargePower().orElse(0);
+
+			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
+			// TODO: Down  Ramp Rate
+			lowerChargePower = Math.max(currentPower - rampRate, 0);
+			upperChargePower = Math.min(currentPower + rampRate, allowedDischargePower);
+		}
+		this._setLowerPossibleDischargePower(lowerChargePower);
+		this._setUpperPossibleDischargePower(upperChargePower);
 	}
 	
 	private boolean responseTimeElapsed() {
@@ -296,10 +341,6 @@ public enum ChannelId implements io.openems.edge.common.channel.ChannelId {
 	
 	private boolean inactivityTimeElapsed() {
 		return Duration.between(inactivityTimestamp, Instant.now(componentManager.getClock())).toSeconds() >= ACTIVITY_TIME_OUT;
-	}
-
-	private void calculatePossibleDischargePower() {
-		// TODO Auto-generated method stub
 	}
 	
 	private void beginStartTimer() {

@@ -16,28 +16,28 @@ public interface ManagedSymmetricEssHybrid extends ManagedSymmetricEss {
 		 * Holds the upper limit of power which can be charged this cycle.
 		 * Range in [{@link ChannelId#ALLOWED_CHARGE_POWER},0]
 		 */
-		POSSIBLE_CHARGE_POWER_UPPER_LIMIT(Doc.of(OpenemsType.INTEGER) //
+		UPPER_POSSIBLE_CHARGE_POWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
 				.unit(Unit.WATT)),
 		
 		/**
 		 * Holds the lower limit of power which can be charged this cycle.
 		 * Range in [{@link ChannelId#ALLOWED_CHARGE_POWER},0]
 		 */
-		POSSIBLE_CHARGE_POWER_LOWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
+		LOWER_POSSIBLE_CHARGE_POWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
 				.unit(Unit.WATT)),
 		
 		/**
 		 * Holds the upper limit of power which can be discharged this cycle.
 		 * Range in [0, {@link ChannelId#ALLOWED_CHARGE_POWER}]
 		 */
-		POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT(Doc.of(OpenemsType.INTEGER) //
+		UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
 				.unit(Unit.WATT)),
 		
 		/**
 		 * Holds the lower limit of power which can be discharged this cycle.
 		 * Range in [0, {@link ChannelId#ALLOWED_CHARGE_POWER}]
 		 */
-		POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
+		LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT(Doc.of(OpenemsType.INTEGER) //
 				.unit(Unit.WATT))
 				
 		;
@@ -52,6 +52,8 @@ public interface ManagedSymmetricEssHybrid extends ManagedSymmetricEss {
 			return this.doc;
 		}
 	}
+
+	public int filterPower(int targetPower);
 	
 	/**
 	 * Gets upper boundary of possible charge power for this cycle.
@@ -96,32 +98,32 @@ public interface ManagedSymmetricEssHybrid extends ManagedSymmetricEss {
 	}
 	
 	public default void _setUpperPossibleChargePower(Integer value) {
-		this.channel(ChannelId.POSSIBLE_CHARGE_POWER_UPPER_LIMIT).setNextValue(value);
+		this.channel(ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT).setNextValue(value);
 	}
 	public default void _setLowerPossibleChargePower(Integer value) {
-		this.channel(ChannelId.POSSIBLE_CHARGE_POWER_LOWER_LIMIT).setNextValue(value);
+		this.channel(ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT).setNextValue(value);
 	}
 	public default void _setUpperPossibleDischargePower(Integer value) {
-		this.channel(ChannelId.POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT).setNextValue(value);
+		this.channel(ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT).setNextValue(value);
 	}
 	public default void _setLowerPossibleDischargePower(Integer value) {
-		this.channel(ChannelId.POSSIBLE_CHARGE_POWER_LOWER_LIMIT).setNextValue(value);
+		this.channel(ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT).setNextValue(value);
 	}
 	
 	public default IntegerReadChannel getUpperPossibleChargePowerChannel() {
-		return channel(ChannelId.POSSIBLE_CHARGE_POWER_UPPER_LIMIT);
+		return channel(ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT);
 	}
 	
 	public default IntegerReadChannel getLowerPossibleChargePowerChannel() {
-		return channel(ChannelId.POSSIBLE_CHARGE_POWER_LOWER_LIMIT);
+		return channel(ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT);
 	}
 	
 	public default IntegerReadChannel getUpperPossibleDischargePowerChannel() {
-		return channel(ChannelId.POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT);
+		return channel(ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT);
 	}
 	
 	public default IntegerReadChannel getLowerPossibleDischargePowerChannel() {
-		return channel(ChannelId.POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT);
+		return channel(ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT);
 	}
 
 }

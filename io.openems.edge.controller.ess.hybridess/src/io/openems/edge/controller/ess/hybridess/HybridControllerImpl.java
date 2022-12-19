@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
+import io.openems.edge.ess.api.ManagedSymmetricEss;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
@@ -49,7 +51,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	 * Minimal total Energy that should be stored by 
 	 * ESSs to ensure EVs can be serviced.
 	 */
-	private int defaultMinimalEnergy;
+	private int defaultMinimumEnergy;
 	private int maxGridPower;
 
 	@Reference
@@ -72,7 +74,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		this.config = config;
 		this.energyPrediction = Path.of(config.energyPrediction()).toFile();
 		this.powerPrediction = Path.of(config.powerPrediction()).toFile();
-		this.defaultMinimalEnergy = config.defaultMinimumEnergy()/* kWh to Wh*/ * 1000;
+		this.defaultMinimumEnergy = config.defaultMinimumEnergy()/* kWh to Wh*/ * 1000;
 		this.maxGridPower = config.maxGridPower() /* kW to W*/ * 1000;
 		if(!Files.exists(energyPrediction.toPath())) {
 			this.logInfo(log, String.format("Energy prediction at %s not found", energyPrediction.toPath()));
@@ -118,6 +120,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	private void charge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
 		int targetGridSetPoint = 0;
 		int minimalStoredEnergy = getMinimalStoredEnergy();
+
 		if(minimalStoredEnergy >= this.getTotalStoredCapacity()) {
 			targetGridSetPoint = -this.maxGridPower;
 		} else {
@@ -133,22 +136,13 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 			 */
 			targetGridSetPoint = 0;
 		}
-		
-		// Use negative value, as negative = charging.
+
 		int chargePower = targetGridSetPoint - this.getTotalProductionEnergy();
-		
-		// TODO Power split.
-		double powerSplit = 0.5;
-		
-		/*
-		 *  TODO Handle undefined AllowedChargePower channels.
-		 *  Either by implementing method like getTotalProductionEnergy which informs on undefined
-		 *  or by using orElse() -> Omits undefined.
-		 *  
-		 *  Right now throws nullPointerException on undefined.
-		 */
-		int redoxPower = Math.max((int)(powerSplit*chargePower), redox.getAllowedChargePower().get());
-		int liIonPower = Math.max(chargePower-redoxPower, liIon.getAllowedChargePower().get());
+
+		double powerSplit = chargePowerSplit(redox, liIon);
+
+		int redoxPower = redox.filterPower((int) (powerSplit*chargePower));
+		int liIonPower = liIon.filterPower(chargePower-redoxPower);
 		
 		redox.setActivePowerEquals(redoxPower);
 		liIon.setActivePowerEquals(liIonPower);
@@ -188,22 +182,19 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 	
 	private int getMinimalStoredEnergy() {
-		int minimalEnergy = this.defaultMinimalEnergy;
+		int minimalEnergy = this.defaultMinimumEnergy;
 
 		// TODO duplicate Code, maybe use aux. method.
 		// TODO change to global timestamp of cycle?
 		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
 		List<Row> csvRows = CSVUtil.parseEnergyPrediction(energyPrediction);
 
-		// No streams in Java 11...
-		for(Row row : csvRows) {
-			if(now.isAfter(row.getStart()) && now.isBefore(row.getEnd())) {
-				if(row.getValue() < 0) {
-					this.logInfo(log, String.format("Invalid value %s for minimal stored energy.", row.getValue()));
-				} else {
-					minimalEnergy = row.getValue();
-				}
-			}
+
+		Optional<Row> prediction = csvRows.stream()
+				.filter(row->now.isAfter(row.getStart()) && now.isBefore(row.getEnd()) && row.getValue() >= 0)
+				.findFirst();
+		if(prediction.isPresent()) {
+			minimalEnergy = prediction.get().getValue();
 		}
 		return minimalEnergy;
 	}
@@ -215,16 +206,12 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		// TODO change to global timestamp of cycle?
 		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
 		List<Row> csvRows = CSVUtil.parseEnergyPrediction(powerPrediction);
+		Optional<Row> prediction = csvRows.stream()
+				.filter(row->now.isAfter(row.getStart()) && now.isBefore(row.getEnd()) && row.getValue() >= 0)
+				.findFirst();
 
-		// No streams in Java 11...
-		for(Row row : csvRows) {
-			if(now.isAfter(row.getStart()) && now.isBefore(row.getEnd())) {
-				if(row.getValue() < 0) {
-					this.logInfo(log, String.format("Invalid value %s for minimal stored energy.", row.getValue()));
-				} else {
-					predictedPower = row.getValue();
-				}
-			}
+		if(prediction.isPresent()) {
+			predictedPower = prediction.get().getValue();
 		}
 
 		return predictedPower;
@@ -249,5 +236,41 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		}
 		return totalProductionEnergy;
 	}
-	
+
+
+	private double chargePowerSplit(ManagedSymmetricEss redox, ManagedSymmetricEss liOn) throws InvalidValueException {
+		double powerSplit = 1;
+		ChargeArea redoxArea = ChargeArea.getArea(redox, defaultMinimumEnergy);
+		ChargeArea liOnArea = ChargeArea.getArea(liOn, defaultMinimumEnergy);
+		powerSplit = ChargeArea.getPowerSplit(redoxArea, liOnArea);
+		return powerSplit;
+	}
+
+	private enum ChargeArea {
+		RED,
+		ORANGE,
+		GREEN;
+
+		// powerSplit = CHARGE_TABLE(liON, redox)
+		private final static double[][] CHARGE_TABLE = {{0.5, 0.3, 0}, // liON RED
+													   {0.7, 0.5, 0.2}, // liON ORANGE
+				                                       {1.0, 0.8, 0.5}}; // lion GREEN
+
+		private static ChargeArea getArea(ManagedSymmetricEss ess, int minimumEnergy) throws InvalidValueException {
+			ChargeArea chargeArea;
+			int storedEnergy = (ess.getSoc().getOrError() * ess.getCapacity().getOrError());
+			if (storedEnergy <= 0.5 * minimumEnergy) {
+				chargeArea = ChargeArea.RED;
+			} else if( storedEnergy <= 0.5* ess.getCapacity().getOrError()) {
+				chargeArea = ChargeArea.ORANGE;
+			} else {
+				chargeArea= ChargeArea.GREEN;
+			}
+			return chargeArea;
+		}
+
+		private static double getPowerSplit(ChargeArea redoxArea, ChargeArea liOnArea) {
+			return CHARGE_TABLE[liOnArea.ordinal()][redoxArea.ordinal()];
+		}
+	}
 }
