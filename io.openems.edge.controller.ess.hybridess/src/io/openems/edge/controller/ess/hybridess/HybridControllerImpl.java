@@ -54,6 +54,11 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	private int defaultMinimumEnergy;
 	private int maxGridPower;
 
+	// Percentage of redox's maximum power output, that redox should supply alone as netpower.
+	private double netPowerThreshold = 0.8;
+
+
+
 	@Reference
 	private ComponentManager componentManager;
 	
@@ -112,13 +117,37 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		}
 		
 		// TODO Handling of different operating status.
-		// TODO Handle distinction charging / discharging.
-		this.charge(redox, liIon);
-		
+		if(sum.getConsumptionActivePower().orElse(0) > 0) {
+			this.discharge(redox, liIon);
+		} else {
+			this.charge(redox, liIon);
+		}
+	}
+
+	private void discharge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
+
+		// ConsumptionActivePower has to be defined at this point, as it is checked before calling discharge.
+		int requiredPower = sum.getConsumptionActivePower().get();
+		double powerSplit = 1;
+		if(requiredPower >= netPowerThreshold*redox.getAllowedDischargePower().orElse(0)
+			|| !SoCArea.getArea(redox, defaultMinimumEnergy).equals(SoCArea.GREEN)) {
+
+			// TODO Implement for discharge. No numbers yet.
+			powerSplit = chargePowerSplit(redox, liIon);
+		}
+
+		int redoxPower = redox.filterPower((int) (powerSplit * requiredPower));
+		int liIonPower = liIon.filterPower(requiredPower - redoxPower);
+
+		redox.setActivePowerEquals(redoxPower);
+		liIon.setActivePowerEquals(liIonPower);
+
+		redox.setReactivePowerEquals(0);
+		liIon.setReactivePowerEquals(0);
 	}
 	
 	private void charge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
-		int targetGridSetPoint = 0;
+		int targetGridSetPoint;
 		int minimalStoredEnergy = getMinimalStoredEnergy();
 
 		if(minimalStoredEnergy >= this.getTotalStoredCapacity()) {
@@ -238,15 +267,15 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 
 
-	private double chargePowerSplit(ManagedSymmetricEss redox, ManagedSymmetricEss liOn) throws InvalidValueException {
+	private double chargePowerSplit(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws InvalidValueException {
 		double powerSplit = 1;
-		ChargeArea redoxArea = ChargeArea.getArea(redox, defaultMinimumEnergy);
-		ChargeArea liOnArea = ChargeArea.getArea(liOn, defaultMinimumEnergy);
-		powerSplit = ChargeArea.getPowerSplit(redoxArea, liOnArea);
+		SoCArea redoxArea = SoCArea.getArea(redox, defaultMinimumEnergy);
+		SoCArea liOnArea = SoCArea.getArea(liIon, defaultMinimumEnergy);
+		powerSplit = SoCArea.getPowerSplit(redoxArea, liOnArea);
 		return powerSplit;
 	}
 
-	private enum ChargeArea {
+	private enum SoCArea {
 		RED,
 		ORANGE,
 		GREEN;
@@ -255,21 +284,28 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		private final static double[][] CHARGE_TABLE = {{0.5, 0.3, 0}, // liON RED
 													   {0.7, 0.5, 0.2}, // liON ORANGE
 				                                       {1.0, 0.8, 0.5}}; // lion GREEN
+		private final static double[][] DISCHARGE_TABLE = {{0.5, 0.8, 1.0}, // liON RED
+				 										  {0.2, 0.5, 0.7}, // liON ORANGE
+				                                          {0, 0.2, 0.5}}; // lion GREEN
 
-		private static ChargeArea getArea(ManagedSymmetricEss ess, int minimumEnergy) throws InvalidValueException {
-			ChargeArea chargeArea;
+		/*
+		 * TODO do we need to separate methods for the ESSs? If so this should maybe a method of the ESS.
+		 * But from my POV this should be controlled by controller.
+		 */
+		private static SoCArea getArea(ManagedSymmetricEss ess, int minimumEnergy) throws InvalidValueException {
+			SoCArea SoCArea;
 			int storedEnergy = (ess.getSoc().getOrError() * ess.getCapacity().getOrError());
 			if (storedEnergy <= 0.5 * minimumEnergy) {
-				chargeArea = ChargeArea.RED;
+				SoCArea = HybridControllerImpl.SoCArea.RED;
 			} else if( storedEnergy <= 0.5* ess.getCapacity().getOrError()) {
-				chargeArea = ChargeArea.ORANGE;
+				SoCArea = HybridControllerImpl.SoCArea.ORANGE;
 			} else {
-				chargeArea= ChargeArea.GREEN;
+				SoCArea= HybridControllerImpl.SoCArea.GREEN;
 			}
-			return chargeArea;
+			return SoCArea;
 		}
 
-		private static double getPowerSplit(ChargeArea redoxArea, ChargeArea liOnArea) {
+		private static double getPowerSplit(SoCArea redoxArea, SoCArea liOnArea) {
 			return CHARGE_TABLE[liOnArea.ordinal()][redoxArea.ordinal()];
 		}
 	}
