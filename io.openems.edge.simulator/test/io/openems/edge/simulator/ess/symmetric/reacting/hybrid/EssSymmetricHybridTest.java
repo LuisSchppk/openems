@@ -33,6 +33,9 @@ public class EssSymmetricHybridTest {
 	private static final ChannelAddress ESS_SOC = new ChannelAddress(ESS_ID, SymmetricEss.ChannelId.SOC.id());
 	private static final ChannelAddress ESS_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(ESS_ID,
 			ManagedSymmetricEss.ChannelId.SET_ACTIVE_POWER_EQUALS.id());
+
+	private static final ChannelAddress ESS_ACTIVE_POWER = new ChannelAddress(ESS_ID,
+			SymmetricEss.ChannelId.ACTIVE_POWER.id());
 	
 	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
 	private static final ChannelAddress ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(ESS_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
@@ -110,6 +113,20 @@ public class EssSymmetricHybridTest {
 					.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, RAMP_RATE)
 					.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE)
 					.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0));
+	}
+
+	@Test
+	public void dischargeLimits() throws Exception {
+
+		ManagedSymmetricEssHybridTest testEss = setup();
+		testEss.getSut().filterPower(1); // Begin startup
+		testEss.next(new TestCase()
+						.timeleap(clock, RESPONSE_TIME + 1, ChronoUnit.MILLIS)
+				.input(ESS_ACTIVE_POWER,RAMP_RATE + 10_000)
+				.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+				.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0)
+				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 10_000)
+				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 2*RAMP_RATE + 10_000));
 	}
 	
 	@Test

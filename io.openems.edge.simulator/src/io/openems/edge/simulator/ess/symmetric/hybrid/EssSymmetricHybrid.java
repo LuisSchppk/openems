@@ -311,7 +311,7 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 
 			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
 			// TODO: Down  Ramp Rate
-			lowerChargePower = Math.max(currentPower - rampRate, allowedChargePower);
+			lowerChargePower = Math.min(Math.max(currentPower - rampRate, allowedChargePower),0);
 			upperChargePower = Math.min(currentPower + rampRate, 0);
 		}
 		this._setLowerPossibleChargePower(lowerChargePower);
@@ -319,19 +319,19 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 	}
 
 	private void calculatePossibleDischargePower() {
-		int lowerChargePower = 0;
-		int upperChargePower = 0;
+		int lowerDischargePower = 0;
+		int upperDischargePower = 0;
 		if(ready) {
 			int currentPower = this.getActivePower().orElse(0);
 			int allowedDischargePower = this.getAllowedDischargePower().orElse(0);
 
 			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
 			// TODO: Down  Ramp Rate
-			lowerChargePower = Math.max(currentPower - rampRate, 0);
-			upperChargePower = Math.min(currentPower + rampRate, allowedDischargePower);
+			lowerDischargePower = Math.max(currentPower - rampRate, 0);
+			upperDischargePower = Math.max(Math.min(currentPower + rampRate, allowedDischargePower),0);
 		}
-		this._setLowerPossibleDischargePower(lowerChargePower);
-		this._setUpperPossibleDischargePower(upperChargePower);
+		this._setLowerPossibleDischargePower(lowerDischargePower);
+		this._setUpperPossibleDischargePower(upperDischargePower);
 	}
 	
 	private boolean responseTimeElapsed() {

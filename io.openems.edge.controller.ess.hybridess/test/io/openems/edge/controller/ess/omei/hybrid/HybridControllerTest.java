@@ -46,8 +46,8 @@ public class HybridControllerTest {
 	private static final String REDOX_ID = "ess0";
 	private static final String LION_ID ="ess1";
 	
-	private static int REDOX_MAX_APPARENT_POWER = 100_000;
-	private static int LION_MAX_APPARENT_POWER = 276_000;
+	private static final int REDOX_MAX_APPARENT_POWER = 100_000;
+	private static final int LION_MAX_APPARENT_POWER = 276_000;
 
 	private static final ChannelAddress REDOX_SOC = new ChannelAddress(REDOX_ID, SymmetricEss.ChannelId.SOC.id());
 	private static final ChannelAddress LION_SOC = new ChannelAddress(LION_ID, SymmetricEss.ChannelId.SOC.id());
@@ -259,7 +259,7 @@ public class HybridControllerTest {
 		return new ControllerTest(new HybridControllerImpl()) //
 				.addReference("componentManager", new DummyComponentManager(clock))
 				.addReference("sum", new DummySum())
-				.addComponent(setupESS(REDOX_ID, LION_MAX_APPARENT_POWER))
+				.addComponent(setupESS(REDOX_ID, REDOX_MAX_APPARENT_POWER))
 				.addComponent(setupESS(LION_ID, LION_MAX_APPARENT_POWER))//
 				.addComponent(new DummySymmetricMeter(METER_ID)) //
 				.activate(MyConfig.create()
