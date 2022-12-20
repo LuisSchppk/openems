@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -33,7 +32,7 @@ public class CSVUtil {
 	 * Files based on naming scheme. Maybe Date?
 	 * 
 	 */
-	public static List<Row> parseEnergyPrediction(File energyPrediction) {
+	public static List<Row> parsePrediction(File energyPrediction) {
 		List<Row> rows = new LinkedList<Row>();
 		try(BufferedReader reader = Files.newBufferedReader(energyPrediction.toPath())) {
 			String line = reader.readLine(); // FieldNames;

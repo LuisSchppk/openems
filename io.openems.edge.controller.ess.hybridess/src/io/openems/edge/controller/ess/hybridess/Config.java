@@ -34,11 +34,11 @@ public
 	String powerPrediction();
 	
 	@AttributeDefinition(name = "Default Minimum Energy", 
-			description = "Minimal total Energy in kWh that should be stored by ESSs to ensure EVs can be serviced.", min="0")
-	int defaultMinimumEnergy() default 100;
+			description = "Minimal total Energy in Wh that should be stored by ESSs to ensure EVs can be serviced.", min="0")
+	int defaultMinimumEnergy() default 100_000;
 	
-	@AttributeDefinition(name ="Maximum Grid Power", description = "Maximum power that can be drawn from grid in kW.")
-	int maxGridPower() default 200;
+	@AttributeDefinition(name ="Maximum Grid Power", description = "Maximum power that can be drawn from grid in W.")
+	int maxGridPower() default 200_000;
 
 	String webconsole_configurationFactory_nameHint() default "Controller HybridController [{id}]";
 

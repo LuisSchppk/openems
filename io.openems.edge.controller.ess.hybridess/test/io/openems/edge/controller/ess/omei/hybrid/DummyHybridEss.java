@@ -15,10 +15,13 @@ import io.openems.edge.ess.test.DummyPower;
 public class DummyHybridEss extends AbstractOpenemsComponent
 implements ManagedSymmetricEssHybrid, ManagedSymmetricEss, SymmetricEss, OpenemsComponent {
 
-	private Power power;
+	private final Power power;
 	private String id;
-	private int powerPrecision = 1;
-	
+	private final int powerPrecision = 1;
+
+	// always true -> no response time testable in controller test. For this ESS test.
+	private boolean ready = true;
+
 	protected DummyHybridEss(String id, Power power,
 			io.openems.edge.common.channel.ChannelId[] firstInitialChannelIds,
 			io.openems.edge.common.channel.ChannelId[]... furtherInitialChannelIds) {
@@ -73,6 +76,45 @@ implements ManagedSymmetricEssHybrid, ManagedSymmetricEss, SymmetricEss, Openems
 		if (this.symmetricApplyPowerCallback != null) {
 			this.symmetricApplyPowerCallback.accept(new SymmetricApplyPowerRecord(activePower, reactivePower));
 		}
+	}
+
+	@Override
+	public int filterPower(int targetPower) {
+
+		/*
+		 * Copy and paste from EssSymmetric. Bad Practice - Don't know how to do it otherwise
+		 * alternative: Implement filteredPower as channel, make filterPower void, set and read value
+		 * in Test via channel.
+		 */
+		int filteredPower = targetPower;
+		int upperLimit = 0;
+		int lowerLimit = 0;
+
+		if(!ready && targetPower != 0) {
+			beginStartTimer();
+			filteredPower = 0;
+		} else if (targetPower >= 0){
+			// Discharging
+
+			upperLimit = this.getUpperPossibleDischargePower().orElse(0);
+			lowerLimit = this.getLowerPossibleDischargePower().orElse(0);
+		} else {
+			// Charging
+
+			upperLimit = this.getUpperPossibleChargePower().orElse(0);
+			lowerLimit = this.getLowerPossibleChargePower().orElse(0);
+		}
+
+		if(targetPower > upperLimit) {
+			filteredPower = upperLimit;
+		} else if(targetPower < lowerLimit) {
+			filteredPower = lowerLimit;
+		}
+
+		return filteredPower;
+	}
+
+	private void beginStartTimer() {
 	}
 
 	public static class SymmetricApplyPowerRecord {
