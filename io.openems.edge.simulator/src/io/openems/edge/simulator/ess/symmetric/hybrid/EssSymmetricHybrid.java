@@ -217,20 +217,6 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 			reactivePower = 0;
 		}
 		this._setReactivePower(reactivePower);
-		
-		/*
-		 * Set AllowedCharge / Discharge based on SoC
-		 */
-		if (soc == 100) {
-			this._setAllowedChargePower(0);
-		} else {
-			this._setAllowedChargePower(this.config.capacity() * -1);
-		}
-		if (soc == 0) {
-			this._setAllowedDischargePower(0);
-		} else {
-			this._setAllowedDischargePower(this.config.capacity());
-		}
 	}
 	
 	@Override

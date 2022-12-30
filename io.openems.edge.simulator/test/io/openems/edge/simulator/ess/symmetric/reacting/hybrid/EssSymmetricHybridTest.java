@@ -46,7 +46,7 @@ public class EssSymmetricHybridTest {
 	
 	
 	private ManagedSymmetricEssHybridTest setup(String ess_id, int capacity, int maxApparentPower, int SoC, GridMode gridMode,
-			int rampRate, int responseTime, int chargePower, int dischargePower) throws OpenemsException, Exception {
+			int rampRate, int responseTime, int chargePower, int dischargePower) throws Exception {
 		return new ManagedSymmetricEssHybridTest(new EssSymmetricHybrid()) //
 				.addReference("cm", new DummyConfigurationAdmin()) //
 				.addReference("componentManager", new DummyComponentManager(clock)) //
@@ -64,7 +64,7 @@ public class EssSymmetricHybridTest {
 						.build());
 	}
 	
-	private ManagedSymmetricEssHybridTest setup() throws OpenemsException, Exception {
+	private ManagedSymmetricEssHybridTest setup() throws Exception {
 		return this.setup(ESS_ID, CAPACITY, MAX_APPARENT_POWER, SOC, GridMode.ON_GRID, RAMP_RATE, RESPONSE_TIME, CHARGE_POWER, DISCHARGE_POWER);
 	}
 	
@@ -73,7 +73,7 @@ public class EssSymmetricHybridTest {
 	 * ESS should be able to charge right away. 
 	 */
 	@Test
-	public void noResponseTime() throws OpenemsException, Exception {
+	public void noResponseTime() throws Exception {
 		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
 				CAPACITY,
 				MAX_APPARENT_POWER,
@@ -90,7 +90,7 @@ public class EssSymmetricHybridTest {
 	}
 	
 	@Test
-	public void responseTime() throws OpenemsException, Exception {
+	public void responseTime() throws Exception {
 		
 		ManagedSymmetricEssHybridTest testEss = setup(ESS_ID,
 				CAPACITY,
@@ -116,17 +116,54 @@ public class EssSymmetricHybridTest {
 	}
 
 	@Test
+	public void chargeLimits() throws Exception {
+		ManagedSymmetricEssHybridTest testEss = setup();
+		testEss.getSut().filterPower(1); // Begin startup time.
+		testEss.next(new TestCase()
+						.timeleap(clock, RESPONSE_TIME + 1, ChronoUnit.MILLIS)
+						.input(ESS_ACTIVE_POWER, -10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -RAMP_RATE - 10_000)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT,0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 30_000))
+				.next(new TestCase()
+						.input(ESS_ACTIVE_POWER, -RAMP_RATE-10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, -10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -2*RAMP_RATE - 10_000)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT,0))
+				.next(new TestCase()
+						.input(ESS_ACTIVE_POWER, CHARGE_POWER + 10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, CHARGE_POWER + 10_000 + RAMP_RATE)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, CHARGE_POWER)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT,0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT,0));
+	}
+
+	@Test
 	public void dischargeLimits() throws Exception {
 
 		ManagedSymmetricEssHybridTest testEss = setup();
 		testEss.getSut().filterPower(1); // Begin startup
 		testEss.next(new TestCase()
 						.timeleap(clock, RESPONSE_TIME + 1, ChronoUnit.MILLIS)
-				.input(ESS_ACTIVE_POWER,RAMP_RATE + 10_000)
-				.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-				.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0)
-				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 10_000)
-				.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 2*RAMP_RATE + 10_000));
+						.input(ESS_ACTIVE_POWER, 10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -30_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, RAMP_RATE + 10_000)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0))
+				.next(new TestCase()
+						.input(ESS_ACTIVE_POWER,RAMP_RATE + 10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 10_000)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 2*RAMP_RATE + 10_000))
+				.next(new TestCase()
+						.input(ESS_ACTIVE_POWER, DISCHARGE_POWER - 10_000)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, 0)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, DISCHARGE_POWER)
+						.output(ESS_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, DISCHARGE_POWER - RAMP_RATE - 10_000));
 	}
 	
 	@Test
