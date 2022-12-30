@@ -1,4 +1,4 @@
-package io.openems.edge.controller.ess.hybridess;
+package io.openems.edge.controller.ess.hybridess.controller;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -6,9 +6,10 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Optional;
 
+import io.openems.edge.controller.ess.hybridess.prediction.PredictionCSV;
+import io.openems.edge.controller.ess.hybridess.prediction.PredictionCSV.Row;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
@@ -28,10 +29,10 @@ import io.openems.edge.common.component.OpenemsComponent;
 import io.openems.edge.common.sum.GridMode;
 import io.openems.edge.common.sum.Sum;
 import io.openems.edge.controller.api.Controller;
-import io.openems.edge.controller.ess.hybridess.CSVUtil.Row;
 import io.openems.edge.ess.api.CalculateGridMode;
 import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
 import io.openems.edge.meter.api.SymmetricMeter;
+
 
 @Designate(ocd = Config.class, factory = true)
 @Component(//
@@ -45,8 +46,11 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		
 	private Config config = null;
 	
-	private File energyPrediction;
-	private File powerPrediction;
+	private File energyPredictionFile;
+	private File powerPredictionFile;
+
+	private PredictionCSV.Row lastPowerPrediction;
+	private PredictionCSV.Row lastEnergyPrediction;
 	
 	/**
 	 * Minimal total Energy that should be stored by 
@@ -55,10 +59,8 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	private int defaultMinimumEnergy;
 	private int maxGridPower;
 
-	// Percentage of redox's maximum power output, that redox should supply alone as netpower.
-	private double netPowerThreshold = 0.8;
-
-
+	// Percentage of mainEss's maximum power output, that mainEss should supply alone as netpower.
+	private final double netPowerThreshold = 0.8;
 
 	@Reference
 	private ComponentManager componentManager;
@@ -75,19 +77,20 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 
 	@Activate
-	void activate(ComponentContext context, Config config) {
+	void activate(ComponentContext context, Config config) throws OpenemsNamedException {
 		super.activate(context, config.id(), config.alias(), config.enabled());
 		this.config = config;
-		this.energyPrediction = Path.of(config.energyPrediction()).toFile();
-		this.powerPrediction = Path.of(config.powerPrediction()).toFile();
+		this.energyPredictionFile = Path.of(config.energyPrediction()).toFile();
+		this.powerPredictionFile = Path.of(config.powerPrediction()).toFile();
 		this.defaultMinimumEnergy = config.defaultMinimumEnergy();
 		this.maxGridPower = config.maxGridPower();
-		if(!Files.exists(energyPrediction.toPath())) {
-			this.logInfo(log, String.format("Energy prediction at %s not found", energyPrediction.toPath()));
+
+		if(!Files.exists(energyPredictionFile.toPath())) {
+			this.logInfo(log, String.format("Energy prediction at %s not found", energyPredictionFile.toPath()));
 		}
 		
-		if(!Files.exists(powerPrediction.toPath())) {
-			this.logInfo(log, String.format("Power prediction at %s not found", powerPrediction.toPath()));
+		if(!Files.exists(powerPredictionFile.toPath())) {
+			this.logInfo(log, String.format("Power prediction at %s not found", powerPredictionFile.toPath()));
 		}
 	}
 
@@ -98,15 +101,10 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 
 	@Override
 	public void run() throws OpenemsNamedException {
-		
-		/*
-		 * ESSs as local variable to avoid Problems when updating config of a ESS during runtime.
-		 * -> look unto updatefilter 
-		 */
-		ManagedSymmetricEssHybrid redox = this.componentManager.getComponent(this.config.redoxId());
-		ManagedSymmetricEssHybrid liIon = this.componentManager.getComponent(this.config.liIonId());
-		GridMode gridMode = CalculateGridMode.calculate(Arrays.asList(redox.getGridMode(), liIon.getGridMode()));
-		
+		ManagedSymmetricEssHybrid mainEss = componentManager.getComponent(config.mainId());
+		ManagedSymmetricEssHybrid supportEss  = componentManager.getComponent(config.supportId());
+		GridMode gridMode = CalculateGridMode.calculate(Arrays.asList(mainEss.getGridMode(), supportEss.getGridMode()));
+
 		switch(gridMode) {
 		case UNDEFINED:
 			this.logWarn(this.log, "Grid-Mode is [UNDEFINED]");
@@ -119,39 +117,41 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		
 		// TODO Handling of different operating status.
 		if(sum.getConsumptionActivePower().orElse(0) > 0) {
-			this.discharge(redox, liIon);
+			this.discharge(mainEss, supportEss);
 		} else {
-			this.charge(redox, liIon);
+			this.charge(mainEss, supportEss);
 		}
 	}
 
-	private void discharge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
+	private void discharge(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws OpenemsNamedException {
 
 		// ConsumptionActivePower has to be defined at this point, as it is checked before calling discharge.
 		int requiredPower = sum.getConsumptionActivePower().get();
 		double powerSplit = 1;
-		if(requiredPower >= netPowerThreshold*redox.getAllowedDischargePower().orElse(0)
-			|| !SoCArea.getArea(redox, defaultMinimumEnergy).equals(SoCArea.GREEN)) {
+		if(requiredPower >= netPowerThreshold*mainEss.getMaxApparentPower().orElse(0)
+			|| !SoCArea.getArea(mainEss, defaultMinimumEnergy).equals(SoCArea.GREEN)) {
 
 			// TODO Implement for discharge. No numbers yet.
-			powerSplit = chargePowerSplit(redox, liIon);
+			powerSplit = dischargePowerSplit(mainEss, supportEss);
 		}
 
-		int redoxPower = redox.filterPower((int) (powerSplit * requiredPower));
-		int liIonPower = liIon.filterPower(requiredPower - redoxPower);
+		int mainEssPower = mainEss.filterPower((int) (powerSplit * requiredPower));
+		int liIonPower = supportEss.filterPower(requiredPower - mainEssPower);
 
-		redox.setActivePowerEquals(redoxPower);
-		liIon.setActivePowerEquals(liIonPower);
+		mainEss.setActivePowerEquals(mainEssPower);
+		supportEss.setActivePowerEquals(liIonPower);
 
-		redox.setReactivePowerEquals(0);
-		liIon.setReactivePowerEquals(0);
+		mainEss.setReactivePowerEquals(0);
+		supportEss.setReactivePowerEquals(0);
 	}
 	
-	private void charge(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws OpenemsNamedException {
+	private void charge(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws OpenemsNamedException {
 		int targetGridSetPoint;
 		int minimumStoredEnergy = getMinimumStoredEnergy();
 
-		if(minimumStoredEnergy >= this.getTotalStoredCapacity(redox, liIon)) {
+		if(minimumStoredEnergy >= this.getTotalStoredCapacity(mainEss, supportEss)
+				|| SoCArea.getArea(mainEss,defaultMinimumEnergy).equals(SoCArea.RED)
+				|| SoCArea.getArea(supportEss, defaultMinimumEnergy).equals(SoCArea.RED)) {
 			targetGridSetPoint = -this.maxGridPower;
 		} else {
 			targetGridSetPoint = getPredictedPower();
@@ -171,16 +171,16 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 
 		int chargePower = targetGridSetPoint - this.getTotalProductionPower();
 
-		double powerSplit = chargePowerSplit(redox, liIon);
+		double powerSplit = chargePowerSplit(mainEss, supportEss);
 
-		int redoxPower = redox.filterPower((int) (powerSplit*chargePower));
-		int liIonPower = liIon.filterPower(chargePower-redoxPower);
+		int mainPower = mainEss.filterPower((int) (powerSplit*chargePower));
+		int supportPower = supportEss.filterPower(chargePower-mainPower);
 		
-		redox.setActivePowerEquals(redoxPower);
-		liIon.setActivePowerEquals(liIonPower);
+		mainEss.setActivePowerEquals(mainPower);
+		supportEss.setActivePowerEquals(supportPower);
 		
-		redox.setReactivePowerEquals(0);
-		liIon.setReactivePowerEquals(0);
+		mainEss.setReactivePowerEquals(0);
+		supportEss.setReactivePowerEquals(0);
 	}
 	
 	/**
@@ -214,45 +214,33 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 	
 	private int getMinimumStoredEnergy() {
-		int minimumEnergy = this.defaultMinimumEnergy;
-
-		// TODO duplicate Code, maybe use aux. method.
-		// TODO change to global timestamp of cycle?
-		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
-		List<Row> csvRows = CSVUtil.parsePrediction(energyPrediction);
-
-		Optional<Row> prediction = csvRows.stream()
-				.filter(row->!now.isBefore(row.getStart()) && !now.isAfter(row.getEnd()))
-				.findFirst();
-
-		if(prediction.isPresent()) {
-			minimumEnergy = prediction.get().getValue();
+		if(lastEnergyPrediction == null
+				|| lastEnergyPrediction.getEnd().isAfter(LocalDateTime.now(componentManager.getClock()))) {
+			Optional<Row> prediction = getPrediction(energyPredictionFile);
+			lastEnergyPrediction = prediction.orElse(null);
 		}
-		return minimumEnergy;
+
+		return lastEnergyPrediction == null ? defaultMinimumEnergy : lastEnergyPrediction.getValue();
 	}
 
 	private int getPredictedPower() {
-		int predictedPower = 0;
-
-		// TODO duplicate Code, maybe use aux. method.
-		// TODO change to global timestamp of cycle?
-		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
-		List<Row> csvRows = CSVUtil.parsePrediction(powerPrediction);
-		Optional<Row> prediction = csvRows.stream()
-				.filter(row->!now.isBefore(row.getStart()) && !now.isAfter(row.getEnd()))
-				.findFirst();
-
-		if(prediction.isPresent()) {
-			predictedPower = prediction.get().getValue();
+		if(lastPowerPrediction == null
+				|| lastPowerPrediction.getEnd().isAfter(LocalDateTime.now(componentManager.getClock()))) {
+			Optional<Row> prediction = getPrediction(powerPredictionFile);
+			lastPowerPrediction = prediction.orElse(null);
 		}
-
-		return predictedPower;
+		return lastPowerPrediction == null ? 0 : lastPowerPrediction.getValue();
 	}
 
-	private int getTotalStoredCapacity(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws InvalidValueException {
-		int redoxStoredEnergy = (redox.getCapacity().getOrError() * (redox.getSoc().getOrError()));
-		int liIonStoredEnergy = (liIon.getCapacity().getOrError() * (liIon.getSoc().getOrError()));
-		return (redoxStoredEnergy + liIonStoredEnergy) / 100;
+	private Optional<Row> getPrediction(File powerPredictionFile) {
+		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
+		return PredictionCSV.getPrediction(powerPredictionFile, now);
+	}
+
+	private int getTotalStoredCapacity(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws InvalidValueException {
+		int mainEssStoredEnergy = (mainEss.getCapacity().getOrError() * (mainEss.getSoc().getOrError()));
+		int liIonStoredEnergy = (supportEss.getCapacity().getOrError() * (supportEss.getSoc().getOrError()));
+		return (mainEssStoredEnergy + liIonStoredEnergy) / 100;
 	}
 	
 	private int getTotalProductionPower() {
@@ -266,11 +254,19 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	}
 
 
-	private double chargePowerSplit(ManagedSymmetricEssHybrid redox, ManagedSymmetricEssHybrid liIon) throws InvalidValueException {
-		double powerSplit = 1;
-		SoCArea redoxArea = SoCArea.getArea(redox, defaultMinimumEnergy);
-		SoCArea liOnArea = SoCArea.getArea(liIon, defaultMinimumEnergy);
-		powerSplit = SoCArea.getPowerSplit(redoxArea, liOnArea);
+	private double chargePowerSplit(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws InvalidValueException {
+		double powerSplit;
+		SoCArea mainEssArea = SoCArea.getArea(mainEss, defaultMinimumEnergy);
+		SoCArea supportEssArea = SoCArea.getArea(supportEss, defaultMinimumEnergy);
+		powerSplit = SoCArea.getPowerSplitCharging(mainEssArea, supportEssArea);
+		return powerSplit;
+	}
+
+	private double dischargePowerSplit(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws InvalidValueException {
+		double powerSplit;
+		SoCArea mainEssArea = SoCArea.getArea(mainEss, defaultMinimumEnergy);
+		SoCArea supportEssArea = SoCArea.getArea(supportEss, defaultMinimumEnergy);
+		powerSplit = SoCArea.getPowerSplitDischarging(mainEssArea, supportEssArea);
 		return powerSplit;
 	}
 
@@ -282,7 +278,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		/*
 		 * Distribution of available charge power between the two ESSs based
 		 * on the SoC.
-		 * ChargeTable[SocAreaLiIon][SocAreaRedox] = % of available power to be assigned to redox.
+		 * ChargeTable[SocAreaSupport][SocAreaMain] = % of available power to be assigned to main.
 		 */
 		private final static double[][] CHARGE_TABLE = {{0.5, 0.3, 0},
 													   {0.7, 0.5, 0.2},
@@ -308,8 +304,12 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 			return SoCArea;
 		}
 
-		private static double getPowerSplit(SoCArea redoxArea, SoCArea liOnArea) {
-			return CHARGE_TABLE[liOnArea.ordinal()][redoxArea.ordinal()];
+		private static double getPowerSplitCharging(SoCArea mainSocArea, SoCArea supportSocArea) {
+			return CHARGE_TABLE[supportSocArea.ordinal()][mainSocArea.ordinal()];
+		}
+
+		private static double getPowerSplitDischarging(SoCArea mainSocArea, SoCArea supportSocArea) {
+			return DISCHARGE_TABLE[supportSocArea.ordinal()][mainSocArea.ordinal()];
 		}
 	}
 }

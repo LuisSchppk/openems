@@ -1,17 +1,15 @@
 package io.openems.edge.controller.ess.omei.hybrid;
 
-import java.lang.annotation.Annotation;
-
 import io.openems.common.test.AbstractComponentConfig;
-import io.openems.edge.controller.ess.hybridess.Config;
+import io.openems.edge.controller.ess.hybridess.controller.Config;
 
 @SuppressWarnings("all")
 public class MyConfig extends AbstractComponentConfig implements Config {
 
 	protected static class Builder {
 		private String id;
-		private String redoxId;
-		private String liIonId;
+		private String mainId;
+		private String supportId;
 		private String meterId;
 		private String energyPrediction;
 		private String powerPrediction;
@@ -26,13 +24,13 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 			return this;
 		}
 		
-		public Builder setRedoxId(String redoxId) {
-			this.redoxId=redoxId;
+		public Builder setMainId(String mainId) {
+			this.mainId = mainId;
 			return this;
 		}
 		
-		public Builder setLiIonId(String liIonId) {
-			this.liIonId = liIonId;
+		public Builder setSupportId(String supportId) {
+			this.supportId = supportId;
 			return this;
 		}
 		
@@ -88,14 +86,13 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 		return this.builder.id;
 	}
 
-	@Override
-	public String redoxId() {
-		return this.builder.redoxId;
+	public String mainId() {
+		return this.builder.mainId;
 	}
 	
 	@Override
-	public String liIonId() {
-		return this.builder.liIonId;
+	public String supportId() {
+		return this.builder.supportId;
 	}
 
 	@Override

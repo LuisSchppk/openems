@@ -1,4 +1,4 @@
-package io.openems.edge.controller.ess.hybridess;
+package io.openems.edge.controller.ess.hybridess.controller;
 
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;

@@ -103,6 +103,10 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 	private static final long ACTIVITY_TIME_OUT = Long.MAX_VALUE;
 	
 	private boolean ready;
+
+	private int maxChargePower;
+
+	private int maxDischargePower;
 	
 	@Reference
 	private Power power;
@@ -134,9 +138,9 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 		this.energy = (long) ((double) config.capacity() /* [Wh] */ * 3600 /* [Wsec] */ * 1000 /* [Wmsec] */
 				/ 100 * this.config.initialSoc() /* [current SoC] */);
 		this._setSoc(config.initialSoc());
-		this._setMaxApparentPower(config.maxApparentPower());
-		this._setAllowedChargePower(config.allowedChargePower());
-		this._setAllowedDischargePower(config.allowedDischargePower());
+		this._setMaxApparentPower(config.allowedDischargePower());
+		this.maxChargePower = (-Math.abs(config.allowedChargePower()));
+		this.maxDischargePower = (config.allowedDischargePower());
 		this._setGridMode(config.gridMode());
 		this._setCapacity(config.capacity());
 		this.rampRate = config.rampRate();
@@ -293,13 +297,13 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 		int upperChargePower = 0;
 		if(ready) {
 			int currentPower = this.getActivePower().orElse(0);
-			int allowedChargePower = this.getAllowedChargePower().orElse(0);
 
 			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
 			// TODO: Down  Ramp Rate
-			lowerChargePower = Math.min(Math.max(currentPower - rampRate, allowedChargePower),0);
+			lowerChargePower = Math.min(Math.max(currentPower - rampRate, maxChargePower),0);
 			upperChargePower = Math.min(currentPower + rampRate, 0);
 		}
+		this._setAllowedChargePower(lowerChargePower);
 		this._setLowerPossibleChargePower(lowerChargePower);
 		this._setUpperPossibleChargePower(upperChargePower);
 	}
@@ -309,13 +313,13 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 		int upperDischargePower = 0;
 		if(ready) {
 			int currentPower = this.getActivePower().orElse(0);
-			int allowedDischargePower = this.getAllowedDischargePower().orElse(0);
 
 			// TODO: Assumes to be called every cycle and cycle duration = 1s. ramp rate should be multiplied with time since last calc.
 			// TODO: Down  Ramp Rate
 			lowerDischargePower = Math.max(currentPower - rampRate, 0);
-			upperDischargePower = Math.max(Math.min(currentPower + rampRate, allowedDischargePower),0);
+			upperDischargePower = Math.max(Math.min(currentPower + rampRate, maxDischargePower),0);
 		}
+		this._setAllowedDischargePower(upperDischargePower);
 		this._setLowerPossibleDischargePower(lowerDischargePower);
 		this._setUpperPossibleDischargePower(upperDischargePower);
 	}

@@ -9,7 +9,6 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 
 	protected static class Builder {
 		private String id = null;
-		private Integer maxApparentPower = null;
 		private Integer capacity = null;
 		private Integer initialSoc = null;
 		private GridMode gridMode = null;
@@ -24,11 +23,6 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 
 		public Builder setId(String id) {
 			this.id = id;
-			return this;
-		}
-
-		public Builder setMaxApparentPower(int maxApparentPower) {
-			this.maxApparentPower = maxApparentPower;
 			return this;
 		}
 
@@ -86,11 +80,6 @@ public class MyConfig extends AbstractComponentConfig implements Config {
 	private MyConfig(Builder builder) {
 		super(Config.class, builder.id);
 		this.builder = builder;
-	}
-
-	@Override
-	public int maxApparentPower() {
-		return this.builder.maxApparentPower;
 	}
 
 	@Override

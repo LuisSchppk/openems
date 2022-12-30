@@ -5,8 +5,8 @@ import io.openems.edge.common.sum.DummySum;
 import io.openems.edge.common.sum.Sum;
 import io.openems.edge.common.test.DummyComponentManager;
 import io.openems.edge.common.test.TimeLeapClock;
-import io.openems.edge.controller.ess.hybridess.CSVUtil;
-import io.openems.edge.controller.ess.hybridess.HybridControllerImpl;
+import io.openems.edge.controller.ess.hybridess.prediction.PredictionCSV;
+import io.openems.edge.controller.ess.hybridess.controller.HybridControllerImpl;
 import io.openems.edge.controller.test.ControllerTest;
 import io.openems.edge.ess.api.ManagedSymmetricEss;
 import io.openems.edge.ess.api.ManagedSymmetricEssHybrid;
@@ -43,46 +43,48 @@ public class HybridControllerTest {
 	private TimeLeapClock clock;
 
 	private static final String CTRL_ID = "ctrl0";
-	private static final String REDOX_ID = "ess0";
-	private static final String LION_ID ="ess1";
+	private static final String MAIN_ID = "ess0";
+	private static final String SUPPORT_ID ="ess1";
 	
-	private static final int REDOX_MAX_APPARENT_POWER = 100_000;
-	private static final int LION_MAX_APPARENT_POWER = 276_000;
+	private static final int MAIN_MAX_APPARENT_POWER = 100_000;
+	private static final int SUPPORT_MAX_APPARENT_POWER = 276_000;
 
-	private static final ChannelAddress REDOX_SOC = new ChannelAddress(REDOX_ID, SymmetricEss.ChannelId.SOC.id());
-	private static final ChannelAddress LION_SOC = new ChannelAddress(LION_ID, SymmetricEss.ChannelId.SOC.id());
-	private static final ChannelAddress REDOX_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(REDOX_ID,
+	private static final ChannelAddress MAIN_SOC = new ChannelAddress(MAIN_ID, SymmetricEss.ChannelId.SOC.id());
+	private static final ChannelAddress SUPPORT_SOC = new ChannelAddress(SUPPORT_ID, SymmetricEss.ChannelId.SOC.id());
+	private static final ChannelAddress MAIN_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(MAIN_ID,
 			ManagedSymmetricEss.ChannelId.SET_ACTIVE_POWER_EQUALS.id());
 
-	private static final ChannelAddress LION_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(LION_ID,
+	private static final ChannelAddress SUPPORT_SET_ACTIVE_POWER_EQUALS = new ChannelAddress(SUPPORT_ID,
 			ManagedSymmetricEss.ChannelId.SET_ACTIVE_POWER_EQUALS.id());
 
-	private static final ChannelAddress REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(REDOX_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(REDOX_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress REDOX_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT = new ChannelAddress(REDOX_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress REDOX_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT = new ChannelAddress(REDOX_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(MAIN_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(MAIN_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT = new ChannelAddress(MAIN_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT = new ChannelAddress(MAIN_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
 
-	private static final ChannelAddress LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(LION_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(LION_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress LION_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT = new ChannelAddress(LION_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
-	private static final ChannelAddress LION_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT = new ChannelAddress(LION_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress MAIN_MAX_APPARENT_POWER_CHANNEL = new ChannelAddress(MAIN_ID, SymmetricEss.ChannelId.MAX_APPARENT_POWER.id());
+	private static final ChannelAddress SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT = new ChannelAddress(SUPPORT_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT = new ChannelAddress(SUPPORT_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_CHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT = new ChannelAddress(SUPPORT_ID, ManagedSymmetricEssHybrid.ChannelId.UPPER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
+	private static final ChannelAddress SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT = new ChannelAddress(SUPPORT_ID, ManagedSymmetricEssHybrid.ChannelId.LOWER_POSSIBLE_DISCHARGE_POWER_LIMIT.id());
 
-	private static final ChannelAddress REDOX_CAPACITY = new ChannelAddress(REDOX_ID, SymmetricEss.ChannelId.CAPACITY.id());
-	private static final ChannelAddress LION_CAPACITY = new ChannelAddress(LION_ID, SymmetricEss.ChannelId.CAPACITY.id());
-	private static final ChannelAddress REDOX_ACTIVE_POWER = new ChannelAddress(REDOX_ID,
+	private static final ChannelAddress MAIN_CAPACITY = new ChannelAddress(MAIN_ID, SymmetricEss.ChannelId.CAPACITY.id());
+	private static final ChannelAddress SUPPORT_CAPACITY = new ChannelAddress(SUPPORT_ID, SymmetricEss.ChannelId.CAPACITY.id());
+	private static final ChannelAddress MAIN_ACTIVE_POWER = new ChannelAddress(MAIN_ID,
 			SymmetricEss.ChannelId.ACTIVE_POWER.id());
-	private static final ChannelAddress LION_ACTIVE_POWER = new ChannelAddress(LION_ID,
+	private static final ChannelAddress SUPPORT_ACTIVE_POWER = new ChannelAddress(SUPPORT_ID,
 			SymmetricEss.ChannelId.ACTIVE_POWER.id());
 	
 	private static final String METER_ID = "meter0";
 	private static final ChannelAddress METER_ACTIVE_POWER = new ChannelAddress(METER_ID, SymmetricMeter.ChannelId.ACTIVE_POWER.id());
 
 	private static final String SUM_ID = "_sum";
-	private static final ChannelAddress PRODUCTION_POWER = new ChannelAddress(SUM_ID, Sum.ChannelId.PRODUCTION_ACTIVE_POWER.id());;
+	private static final ChannelAddress PRODUCTION_POWER = new ChannelAddress(SUM_ID, Sum.ChannelId.PRODUCTION_ACTIVE_POWER.id());
+	private static final ChannelAddress CONSUMPTION_POWER = new ChannelAddress(SUM_ID, Sum.ChannelId.CONSUMPTION_ACTIVE_POWER.id());
 	
 	private static final int MAX_GRID_POWER = 200_000; // W
 	private static final int DEFAULT_MIN_ENERGY = 100_000; // Wh
-
+	
 	@Test
 	public void chargeSplit() throws Exception {
 
@@ -92,54 +94,53 @@ public class HybridControllerTest {
 
 		controllerTest.next(new TestCase() // Both in red
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 5) // Both start in red area 0,05 * 400_000Wh = 20_000 <= 50_000
-						.input(LION_SOC, 5)  // 0,05 * 276_000 = 13800
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -20_000) // targetPower outside limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, -20_000) // power should be limited by filterPower
-						.output(LION_SET_ACTIVE_POWER_EQUALS, -180_000)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5) // Both start in red area 0,05 * 400_000Wh = 20_000 <= 50_000
+						.input(SUPPORT_SOC, 5)  // 0,05 * 276_000 = 13800
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -20_000) // targetPower outside limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -20_000) // power should be limited by filterPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -180_000)
 						)
 				.next(new TestCase() // Both in red
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 5) // Both start in red area 0,05 * 400_000Wh = 20_000 <= 50_000
-						.input(LION_SOC, 5)  // 0,05 * 276_000 = 13800
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, (int)(-0.5*MAX_GRID_POWER)) // power should be split equally.
-						.output(LION_SET_ACTIVE_POWER_EQUALS, (int)(-0.5*MAX_GRID_POWER)))
-				.next(new TestCase() // redox orange, liIOn red
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5) // Both start in red area 0,05 * 400_000Wh = 20_000 <= 50_000
+						.input(SUPPORT_SOC, 5)  // 0,05 * 276_000 = 13800
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, (int)(-0.5*MAX_GRID_POWER)) // power should be split equally.
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, (int)(-0.5*MAX_GRID_POWER)))
+				.next(new TestCase() // MAIN orange, support red
 						.input(METER_ACTIVE_POWER,0)
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 20) // redox orange: 0.3 of chargePower
-						.input(LION_SOC, 5) // liOn red: 0.7 of chargePower
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, (int)(-0.3*MAX_GRID_POWER))
-						.output(LION_SET_ACTIVE_POWER_EQUALS, (int)(-0.7*MAX_GRID_POWER)))
-				.next(new TestCase() // redox green, liIon red
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 20) // MAIN orange: 0.3 of chargePower
+						.input(SUPPORT_SOC, 5) // SUPPORT red: 0.7 of chargePower
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, (int)(-0.3*MAX_GRID_POWER))
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, (int)(-0.7*MAX_GRID_POWER)))
+				.next(new TestCase() // MAIN green, support red
 						.input(METER_ACTIVE_POWER,0)
-						.input(PRODUCTION_POWER, MAX_GRID_POWER) // minEnergy satisfied -> no more power from grid.
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 80) // redox orange: 0.3 of chargePower
-						.input(LION_SOC, 5) // liOn red: 0.7 of chargePower
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, 0)
-						.output(LION_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER));
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 80) // MAIN orange: 0.3 of chargePower
+						.input(SUPPORT_SOC, 5) // SUPPORT red: 0.7 of chargePower
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, 0)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER));
 	}
 
 	@Test
@@ -151,16 +152,16 @@ public class HybridControllerTest {
 		controllerTest.next(new TestCase() // both in green -> minEnergy satisfied.
 						.timeleap(clock,1, ChronoUnit.HOURS) // Advance to time window with prediction.
 				.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-				.input(REDOX_CAPACITY, 400_000)
-				.input(LION_CAPACITY, 276_000)
-				.input(REDOX_SOC, 70) // Green SoC area
-				.input(LION_SOC, 70)  // Green SoC area
-				.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-				.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-				.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-				.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-				.output(REDOX_SET_ACTIVE_POWER_EQUALS, predictedPower / 2)
-				.output(LION_SET_ACTIVE_POWER_EQUALS, predictedPower / 2)
+				.input(MAIN_CAPACITY, 400_000)
+				.input(SUPPORT_CAPACITY, 276_000)
+				.input(MAIN_SOC, 70) // Green SoC area
+				.input(SUPPORT_SOC, 70)  // Green SoC area
+				.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+				.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+				.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+				.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+				.output(MAIN_SET_ACTIVE_POWER_EQUALS, predictedPower / 2)
+				.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, predictedPower / 2)
 		);
 	}
 
@@ -172,28 +173,28 @@ public class HybridControllerTest {
 		controllerTest.next(new TestCase() // Below energy minimum set by prediction.
 						.timeleap(clock,1, ChronoUnit.HOURS) // Advance to time window with prediction.
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 70) // Green SoC area 280_000Wh
-						.input(LION_SOC, 70)  // Green SoC area 193_200Wh
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2)
-						.output(LION_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2))
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 70) // Green SoC area 280_000Wh
+						.input(SUPPORT_SOC, 70)  // Green SoC area 193_200Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2))
 				.next(new TestCase() // Above energy minimum set by prediction.
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 100) // Green SoC area 400_000Wh
-						.input(LION_SOC, 70)  // Green SoC area 193_200Wh
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, 0)
-						.output(LION_SET_ACTIVE_POWER_EQUALS, 0));
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 100) // Green SoC area 400_000Wh
+						.input(SUPPORT_SOC, 70)  // Green SoC area 193_200Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, 0)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, 0));
 	}
 
 	@Test
@@ -204,46 +205,155 @@ public class HybridControllerTest {
 				.timeleap(clock,1, ChronoUnit.HOURS) // Advance to time window with prediction.
 				.input(METER_ACTIVE_POWER,0) // Set consumption to 0
 				.input(PRODUCTION_POWER, productionPower)
-				.input(REDOX_CAPACITY, 400_000)
-				.input(LION_CAPACITY, 276_000)
-				.input(REDOX_SOC, 70)
-				.input(LION_SOC, 70)
-				.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-				.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-				.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-				.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-				.output(REDOX_SET_ACTIVE_POWER_EQUALS, -productionPower / 2)
-				.output(LION_SET_ACTIVE_POWER_EQUALS, -productionPower / 2));
+				.input(MAIN_CAPACITY, 400_000)
+				.input(SUPPORT_CAPACITY, 276_000)
+				.input(MAIN_SOC, 70)
+				.input(SUPPORT_SOC, 70)
+				.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+				.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+				.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+				.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+				.output(MAIN_SET_ACTIVE_POWER_EQUALS, -productionPower / 2)
+				.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -productionPower / 2));
 	}
 
 	@Test
 	public void chargeMinEnergy() throws Exception {
 		ControllerTest controllerTest = createControllerTest();
-		controllerTest.next(new TestCase() // Below energy minimum set by prediction.
-						.timeleap(clock,1, ChronoUnit.HOURS) // Advance to time window with prediction.
+		controllerTest.next(new TestCase() // Below energy minimum.
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 10) // 40_000Wh
-						.input(LION_SOC, 10)  // 27_600Wh
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2)
-						.output(LION_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2))
-				.next(new TestCase() // Above energy minimum set by prediction.
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 10) // 40_000Wh
+						.input(SUPPORT_SOC, 10)  // 27_600Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2))
+				.next(new TestCase() // Above energy minimum.
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
-						.input(REDOX_CAPACITY, 400_000)
-						.input(LION_CAPACITY, 276_000)
-						.input(REDOX_SOC, 20) // 80_000Wh
-						.input(LION_SOC, 10)  // 27_600Wh | TODO Still in Red area -> needs to be considered!
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
-						.input(REDOX_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
-						.input(LION_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(REDOX_SET_ACTIVE_POWER_EQUALS, 0)
-						.output(LION_SET_ACTIVE_POWER_EQUALS, 0));
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 20) // 80_000Wh
+						.input(SUPPORT_SOC, 20)  // 55_200Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, 0)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, 0));
+	}
+
+	@Test
+	public void dischargeSplit() throws Exception {
+		int required_power  = 200_000;
+		ControllerTest controllerTest = createControllerTest();
+		controllerTest.next(new TestCase() // Both Red
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5)
+						.input(SUPPORT_SOC, 5)  // 0,05 * 276_000 = 13800
+						.input(MAIN_MAX_APPARENT_POWER_CHANNEL, MAIN_MAX_APPARENT_POWER)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0) // targetPower outside limit
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 20_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, 20_000) // power should be limited by filterPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, 180_000))
+				.next(new TestCase() // Both Red
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5)
+						.input(SUPPORT_SOC, 5)  // 0,05 * 276_000 = 13800
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0) // targetPower outside limit
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, required_power/2) // power should be limited by filterPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, required_power/2)
+				)
+				.next(new TestCase() // main red, support orange
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5)
+						.input(SUPPORT_SOC, 20)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0) // targetPower outside limit
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, (int)(required_power*0.2)) // power should be limited by filterPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, (int)(required_power*0.8))
+				)
+				.next(new TestCase() // main red, support green
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5)
+						.input(SUPPORT_SOC, 80)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0) // targetPower outside limit
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, (int)(required_power*0.0)) // power should be limited by filterPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, (int)(required_power*1.0))
+				);
+	}
+
+	@Test
+	public void dischargeNetLoad() throws Exception {
+		int required_power  = 60_000;
+		ControllerTest controllerTest = createControllerTest();
+		controllerTest.next(new TestCase()
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 70)
+						.input(SUPPORT_SOC, 70)
+						.input(MAIN_MAX_APPARENT_POWER_CHANNEL, MAIN_MAX_APPARENT_POWER)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, required_power)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, 0))
+				.next(new TestCase()
+						.input(CONSUMPTION_POWER, 2*required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 70)
+						.input(SUPPORT_SOC, 70)
+						.input(MAIN_MAX_APPARENT_POWER_CHANNEL, MAIN_MAX_APPARENT_POWER)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, required_power)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, required_power))
+				.next(new TestCase()
+						.input(CONSUMPTION_POWER, required_power)
+						.input(METER_ACTIVE_POWER, 0)
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 5)
+						.input(SUPPORT_SOC, 70)
+						.input(MAIN_MAX_APPARENT_POWER_CHANNEL, MAIN_MAX_APPARENT_POWER)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(MAIN_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_LOWER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_DISCHARGE_POWER_UPPER_LIMIT, 300_000)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, 0)
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, required_power));
 	}
 
 	private ControllerTest createControllerTest() throws Exception {
@@ -259,13 +369,13 @@ public class HybridControllerTest {
 		return new ControllerTest(new HybridControllerImpl()) //
 				.addReference("componentManager", new DummyComponentManager(clock))
 				.addReference("sum", new DummySum())
-				.addComponent(setupESS(REDOX_ID, REDOX_MAX_APPARENT_POWER))
-				.addComponent(setupESS(LION_ID, LION_MAX_APPARENT_POWER))//
+				.addComponent(setupESS(MAIN_ID, MAIN_MAX_APPARENT_POWER))
+				.addComponent(setupESS(SUPPORT_ID, SUPPORT_MAX_APPARENT_POWER))//
 				.addComponent(new DummySymmetricMeter(METER_ID)) //
 				.activate(MyConfig.create()
 						.setId(CTRL_ID)
-						.setRedoxId(REDOX_ID)
-						.setLiIonId(LION_ID)//
+						.setMainId(MAIN_ID)
+						.setSupportId(SUPPORT_ID)//
 						.setMeterId(METER_ID)
 						.setEnergyPrediction(energyPrediction.toString())
 						.setPowerPrediction(powerPrediction.toString())
@@ -283,7 +393,7 @@ public class HybridControllerTest {
 			fail(String.format("Could not find %s", filepath.toString()));
 		}
 
-		StringJoiner row = new StringJoiner(CSVUtil.SEPARATOR);
+		StringJoiner row = new StringJoiner(PredictionCSV.SEPARATOR);
 		row.add(start).add(end).add(String.valueOf(value));
 		Files.writeString(filepath,String.format("%s%s",row.toString(), System.lineSeparator()), StandardOpenOption.APPEND);
 	}
@@ -300,7 +410,7 @@ public class HybridControllerTest {
 
 		File predictionCSV = tempFolder.newFile(filename);
 
-		StringJoiner fieldNames = new StringJoiner(CSVUtil.SEPARATOR);
+		StringJoiner fieldNames = new StringJoiner(PredictionCSV.SEPARATOR);
 		fieldNames.add("START").add("END").add("VALUE");
 		Files.writeString(predictionCSV.toPath(), fieldNames + System.lineSeparator(),
 				StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);

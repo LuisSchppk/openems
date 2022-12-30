@@ -1,4 +1,4 @@
-package io.openems.edge.controller.ess.hybridess;
+package io.openems.edge.controller.ess.hybridess.controller;
 
 import org.osgi.service.metatype.annotations.AttributeDefinition;
 import org.osgi.service.metatype.annotations.ObjectClassDefinition;
@@ -15,11 +15,11 @@ public
 	@AttributeDefinition(name = "Alias", description = "Human-readable name of this Component; defaults to Component-ID")
 	String alias() default "";
 	
-	@AttributeDefinition(name = "Redox", description = "ID of Redox-Ess.")
-	String redoxId();
+	@AttributeDefinition(name = "Main-Ess", description = "ID of Main-Ess. Ess with high capacity, providing power for netload.")
+	String mainId();
 	
-	@AttributeDefinition(name = "Lithium-Ion", description = "ID of Lithium-Ion-Ess.")
-	String liIonId();
+	@AttributeDefinition(name = "Support-Ess", description = "ID of Support-Ess. Ess with high power output.")
+	String supportId();
 
 	@AttributeDefinition(name = "Grid-Meter-ID", description = "ID of the Grid-Meter.")
 	String meterId();

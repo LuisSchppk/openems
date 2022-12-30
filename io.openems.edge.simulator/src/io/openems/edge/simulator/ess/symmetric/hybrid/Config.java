@@ -19,9 +19,6 @@ public @interface Config {
 	@AttributeDefinition(name = "Is enabled?", description = "Is this Component enabled?")
 	boolean enabled() default true;
 
-	@AttributeDefinition(name = "Max Apparent Power [VA]")
-	int maxApparentPower() default 10000;
-
 	@AttributeDefinition(name = "Capacity [Wh]")
 	int capacity() default 10000;
 	
