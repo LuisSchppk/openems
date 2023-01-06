@@ -181,8 +181,34 @@ public class HybridControllerTest {
 						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
 						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
 						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
-						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2)
-						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER / 2))
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -6700) // Missing energy 26800Wh over 2h -> 13400W split 50:50
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -6700))
+				.next(new TestCase() // Below energy minimum set by prediction.
+						.timeleap(clock,30, ChronoUnit.MINUTES) // Advance to time window with prediction.
+						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 70) // Green SoC area 280_000Wh
+						.input(SUPPORT_SOC, 70)  // Green SoC area 193_200Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -8933) // Missing energy 26800Wh over 1.5h -> 17866W split 50:50
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -8933))
+				.next(new TestCase() // Below energy minimum set by prediction.
+						.timeleap(clock,89, ChronoUnit.HOURS) // Advance to time window with prediction.
+						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
+						.input(MAIN_CAPACITY, 400_000)
+						.input(SUPPORT_CAPACITY, 276_000)
+						.input(MAIN_SOC, 70) // Green SoC area 280_000Wh
+						.input(SUPPORT_SOC, 70)  // Green SoC area 193_200Wh
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000) // targetPower within limit
+						.input(MAIN_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_LOWER_LIMIT, -300_000)
+						.input(SUPPORT_GET_POSSIBLE_CHARGE_POWER_UPPER_LIMIT, 0)
+						.output(MAIN_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER/2) // Missing energy 26800Wh over 1min -> 1608000 limited by maxGridPower
+						.output(SUPPORT_SET_ACTIVE_POWER_EQUALS, -MAX_GRID_POWER/2))
 				.next(new TestCase() // Above energy minimum set by prediction.
 						.input(METER_ACTIVE_POWER,0) // Set consumption to 0
 						.input(MAIN_CAPACITY, 400_000)

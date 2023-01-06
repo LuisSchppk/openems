@@ -175,8 +175,10 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 			if(activePower != 0) {
 				if(activePower > 0) {
 					this.operatingStatus = OperatingStatus.CHARGING;
+					this.calculateChargeTime(activePower);
 				} else {
 					this.operatingStatus = OperatingStatus.DISCHARGING;
+					this.calculateDischargeTime(activePower);
 				}
 				inactivityTimestamp = null;
 			} else {
@@ -337,6 +339,32 @@ public class EssSymmetricHybrid extends AbstractOpenemsComponent
 		if(timestampStartup == null) {
 			this.timestampStartup = Instant.now(componentManager.getClock());
 		}
+	}
+
+	private void calculateChargeTime(int power) {
+		if(power > 0) {
+			throw new IllegalArgumentException("Power for charging must be negative");
+		}
+		int unusedCapacity = this.getCapacity().orElse(0) - this.getActivePower().orElse(0);
+		unusedCapacity *= 3600; // to Ws
+		long chargeSeconds = unusedCapacity / -power;
+
+		// What to do with it? Write to channel?
+		Duration chargeTime = Duration.of(chargeSeconds, ChronoUnit.SECONDS);
+	}
+
+	private void calculateDischargeTime(int power) {
+		if(power < 0) {
+			throw new IllegalArgumentException("Power for charging must be positive");
+		}
+
+		int unusedCapacity = this.getCapacity().orElse(0) - this.getActivePower().orElse(0);
+		unusedCapacity *= 3600; // to Ws
+		long chargeSeconds = unusedCapacity / power;
+
+		// What to do with it? Write to channel?
+		Duration chargeTime = Duration.of(chargeSeconds, ChronoUnit.SECONDS);
+
 	}
 	
 	/**

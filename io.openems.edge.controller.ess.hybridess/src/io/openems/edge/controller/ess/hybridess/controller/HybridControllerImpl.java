@@ -3,8 +3,10 @@ package io.openems.edge.controller.ess.hybridess.controller;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -148,10 +150,13 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	private void charge(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws OpenemsNamedException {
 		int targetGridSetPoint;
 		int minimumStoredEnergy = getMinimumStoredEnergy();
+		int totalStoredEnergy = this.getTotalStoredEnergy(mainEss, supportEss);
+		LocalDateTime now = LocalDateTime.now(componentManager.getClock());
 
-		if(minimumStoredEnergy >= this.getTotalStoredCapacity(mainEss, supportEss)
-				|| SoCArea.getArea(mainEss,defaultMinimumEnergy).equals(SoCArea.RED)
-				|| SoCArea.getArea(supportEss, defaultMinimumEnergy).equals(SoCArea.RED)) {
+		if(minimumStoredEnergy >= totalStoredEnergy) {
+			targetGridSetPoint = calculateGridSetPoint(minimumStoredEnergy, totalStoredEnergy, now);
+		} else if (SoCArea.getArea(mainEss,defaultMinimumEnergy).equals(SoCArea.RED)
+					|| SoCArea.getArea(supportEss, defaultMinimumEnergy).equals(SoCArea.RED)) {
 			targetGridSetPoint = -this.maxGridPower;
 		} else {
 			targetGridSetPoint = getPredictedPower();
@@ -165,7 +170,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 			 * As interim solution: set to 0
 			 */
 			logInfo(log, String.format("Ignored power prediction %s during charge at %s",
-					targetGridSetPoint, Instant.now(componentManager.getClock())));
+					targetGridSetPoint, now));
 			targetGridSetPoint = 0;
 		}
 
@@ -190,10 +195,14 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 	 * @return Value in [W] which should be feed-in(positive) 
 	 * 	      or sold-off(negative) to grid.
 	 */
-	private int calculateGridSetpoint() {
-		// Consider Prediction
-		// Consider Energy Prices
-		return 0;
+	private int calculateGridSetPoint(int minimumStoredEnergy, int totalStoredEnergy, LocalDateTime now) {
+		double missingEnergy = minimumStoredEnergy - totalStoredEnergy;
+		int targetGridSetPoint = -maxGridPower;
+		if(lastEnergyPrediction != null) {
+			Duration remainingTime = Duration.between(now, lastEnergyPrediction.getEnd());
+			targetGridSetPoint = -Math.min(powerFromEnergy(missingEnergy, remainingTime), maxGridPower);
+		}
+		return targetGridSetPoint;
 	}
 	
 	/**
@@ -237,7 +246,7 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		return PredictionCSV.getPrediction(powerPredictionFile, now);
 	}
 
-	private int getTotalStoredCapacity(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws InvalidValueException {
+	private int getTotalStoredEnergy(ManagedSymmetricEssHybrid mainEss, ManagedSymmetricEssHybrid supportEss) throws InvalidValueException {
 		int mainEssStoredEnergy = (mainEss.getCapacity().getOrError() * (mainEss.getSoc().getOrError()));
 		int liIonStoredEnergy = (supportEss.getCapacity().getOrError() * (supportEss.getSoc().getOrError()));
 		return (mainEssStoredEnergy + liIonStoredEnergy) / 100;
@@ -268,6 +277,22 @@ public class HybridControllerImpl extends AbstractOpenemsComponent implements Hy
 		SoCArea supportEssArea = SoCArea.getArea(supportEss, defaultMinimumEnergy);
 		powerSplit = SoCArea.getPowerSplitDischarging(mainEssArea, supportEssArea);
 		return powerSplit;
+	}
+
+	/**
+	 * Calculates the amount of power required to reach {@code energyRequirement} in
+	 * time {@code duration}.
+	 * Power = energyRequirement / Duration
+	 *
+	 * @param energyRequirement target amount of power in [Wh].
+	 * @param duration	time remaining to charge/ discharge.
+	 * @return Power in [W] needed to reach {@code energyRequirement} in time {@code duration}.
+	 */
+	private int powerFromEnergy(double energyRequirement, Duration duration) {
+		if(duration.isNegative() || duration.isZero()) {
+			return Integer.MAX_VALUE;
+		}
+		return (int)((energyRequirement * 3600.0) / duration.toSeconds());
 	}
 
 	private enum SoCArea {
